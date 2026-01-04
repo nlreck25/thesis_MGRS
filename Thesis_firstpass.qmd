@@ -1,0 +1,1077 @@
+---
+title: "First pass analysis"
+author: "Nikki Reck"
+format: html
+editor: visual
+---
+
+## Background
+
+This is my first pass analysis for my data on red squirrel vocal distinctiveness. I will be cleaning the data so that it is compatible with R (renaming columns, and creating new columns). Then I will take averages of each call from each animal, then take averages of all calls per animal. Then I will look at how the two populations may or may not differ.
+
+Load in packages and the data sets I will be using.
+
+```{r}
+library(tidyverse)
+
+sq_data <- read_csv("data_raw/combined_sq_data2.csv")
+
+detections <- read_csv("data_raw/01jan2026_detections4.csv")
+```
+
+## Call level Averages
+
+Taking the averages of each of the calls per animal. Fix any oddities.
+
+```{r}
+# turn "_" into NA, then numeric
+detections <- detections %>%
+  mutate(
+    break_s = as.character(break_s),
+    break_s = na_if(break_s, "_"),
+    break_s = as.numeric(break_s)
+  )
+
+
+glimpse(detections)
+
+# Call-level averages (one row per call)
+
+call_avgs <- detections %>%
+  group_by(midden, filename) %>%
+  summarise(
+    no_notes = n(),
+    call_duration = first(call_duration),
+    note_rate = no_notes / call_duration,
+
+    duration = mean(duration, na.rm = TRUE),
+    break_s = mean(break_s, na.rm = TRUE),
+    disttomax = mean(disttomax, na.rm = TRUE),
+
+    rms = mean(rms, na.rm = TRUE),
+    energy = mean(energy, na.rm = TRUE),
+    peaktopeak = mean(peaktopeak, na.rm = TRUE),
+
+    peak_freq_mean = mean(peak_freq_mean, na.rm = TRUE),
+    peak_ampl_mean = mean(peak_ampl_mean, na.rm = TRUE),
+    min_freq_mean = mean(min_freq_mean, na.rm = TRUE),
+    max_freq_mean = mean(max_freq_mean, na.rm = TRUE),
+    bandw_mean = mean(bandw_mean, na.rm = TRUE),
+
+    quart_25_mean = mean(quart_25_mean, na.rm = TRUE),
+    quart_50_mean = mean(quart_50_mean, na.rm = TRUE),
+    quart_75_mean = mean(quart_75_mean, na.rm = TRUE),
+
+    entropy_mean = mean(entropy_mean, na.rm = TRUE)
+  ) %>%
+  ungroup()
+call_avgs
+
+
+```
+
+## Squirrel level averages
+
+Taking the averages of all the calls per animal.
+
+```{r}
+sq_avgs <- call_avgs %>%
+  group_by(midden) %>%
+  summarise(
+    n_calls = n(),
+
+    # averages of call-level traits
+    call_duration = mean(call_duration, na.rm = TRUE),
+    no_notes = mean(no_notes, na.rm = TRUE),
+    note_rate = mean(note_rate, na.rm = TRUE),
+
+    duration = mean(duration, na.rm = TRUE),
+    break_s = mean(break_s, na.rm = TRUE),
+    disttomax = mean(disttomax, na.rm = TRUE),
+
+    rms = mean(rms, na.rm = TRUE),
+    energy = mean(energy, na.rm = TRUE),
+    peaktopeak = mean(peaktopeak, na.rm = TRUE),
+
+    peak_freq_mean = mean(peak_freq_mean, na.rm = TRUE),
+    peak_ampl_mean = mean(peak_ampl_mean, na.rm = TRUE),
+    min_freq_mean = mean(min_freq_mean, na.rm = TRUE),
+    max_freq_mean = mean(max_freq_mean, na.rm = TRUE),
+    bandw_mean = mean(bandw_mean, na.rm = TRUE),
+
+    quart_25_mean = mean(quart_25_mean, na.rm = TRUE),
+    quart_50_mean = mean(quart_50_mean, na.rm = TRUE),
+    quart_75_mean = mean(quart_75_mean, na.rm = TRUE),
+
+    entropy_mean = mean(entropy_mean, na.rm = TRUE)
+  ) %>%
+  ungroup()
+sq_avgs
+
+
+
+## Join sq_avgs to sq data
+
+sq_data_avgs <- sq_data %>%
+  left_join(sq_avgs, by = "midden")
+sq_data_avgs
+
+# worried that sqs with 8 calls vs sqs with 4-5 calls will create bias. Does having extra calls (like 8 instead of 5) change the squirrel’s average? Gonna check differences to see if i need to standardize sqs to 5 calls and eliminate extra calls. I calculated squirrel-level means two ways.first, I used all available calls per squirrel and using the first five calls per squirrel as a sensitivity check.
+
+# all calls
+sq_avgs_all <- call_avgs %>%
+  group_by(midden) %>%
+  summarise(
+    n_calls = n(),
+
+    call_duration = mean(call_duration, na.rm = TRUE),
+    no_notes     = mean(no_notes, na.rm = TRUE),
+    note_rate    = mean(note_rate, na.rm = TRUE),
+
+    duration     = mean(duration, na.rm = TRUE),
+    break_s      = mean(break_s, na.rm = TRUE),
+    disttomax    = mean(disttomax, na.rm = TRUE),
+
+    rms          = mean(rms, na.rm = TRUE),
+    energy       = mean(energy, na.rm = TRUE),
+    peaktopeak   = mean(peaktopeak, na.rm = TRUE),
+
+    peak_freq_mean  = mean(peak_freq_mean, na.rm = TRUE),
+    peak_ampl_mean  = mean(peak_ampl_mean, na.rm = TRUE),
+    min_freq_mean   = mean(min_freq_mean, na.rm = TRUE),
+    max_freq_mean   = mean(max_freq_mean, na.rm = TRUE),
+    bandw_mean      = mean(bandw_mean, na.rm = TRUE),
+
+    quart_25_mean = mean(quart_25_mean, na.rm = TRUE),
+    quart_50_mean = mean(quart_50_mean, na.rm = TRUE),
+    quart_75_mean = mean(quart_75_mean, na.rm = TRUE),
+
+    entropy_mean  = mean(entropy_mean, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+
+# first 5 calls per squirrel
+sq_avgs_5 <- call_avgs %>%
+  group_by(midden) %>%
+  slice_head(n = 5) %>%
+  summarise(
+    n_calls = n(),
+
+    call_duration = mean(call_duration, na.rm = TRUE),
+    no_notes     = mean(no_notes, na.rm = TRUE),
+    note_rate    = mean(note_rate, na.rm = TRUE),
+
+    duration     = mean(duration, na.rm = TRUE),
+    break_s      = mean(break_s, na.rm = TRUE),
+    disttomax    = mean(disttomax, na.rm = TRUE),
+
+    rms          = mean(rms, na.rm = TRUE),
+    energy       = mean(energy, na.rm = TRUE),
+    peaktopeak   = mean(peaktopeak, na.rm = TRUE),
+
+    peak_freq_mean  = mean(peak_freq_mean, na.rm = TRUE),
+    peak_ampl_mean  = mean(peak_ampl_mean, na.rm = TRUE),
+    min_freq_mean   = mean(min_freq_mean, na.rm = TRUE),
+    max_freq_mean   = mean(max_freq_mean, na.rm = TRUE),
+    bandw_mean      = mean(bandw_mean, na.rm = TRUE),
+
+    quart_25_mean = mean(quart_25_mean, na.rm = TRUE),
+    quart_50_mean = mean(quart_50_mean, na.rm = TRUE),
+    quart_75_mean = mean(quart_75_mean, na.rm = TRUE),
+
+    entropy_mean  = mean(entropy_mean, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# compare parameters
+compare_entropy <- sq_avgs_all %>%
+  select(midden, entropy_all = entropy_mean) %>%
+  left_join(
+    sq_avgs_5 %>% select(midden, entropy_5 = entropy_mean),
+    by = "midden"
+  )
+
+p_entropy <- compare_entropy %>%
+  ggplot(aes(x = entropy_5, y = entropy_all)) +
+  geom_point(na.rm = TRUE) +
+  geom_abline() +
+  labs(
+    x = "Entropy mean (first 5 calls)",
+    y = "Entropy mean (all calls)"
+  )
+
+p_entropy
+
+ggsave("figures/compare_entropy.png", plot = p_entropy, width = 7, height = 5, dpi = 300)
+
+p_call_duration <- compare_call_duration %>%
+  ggplot(aes(x = call_duration_5, y = call_duration_all)) +
+  geom_point(na.rm = TRUE) +
+  geom_abline() +
+  labs(
+    x = "Call duration mean (first 5 calls)",
+    y = "Call duration mean (all calls)"
+  )
+
+p_call_duration
+
+ggsave("figures/compare_call_duration.png",
+       plot = p_call_duration,
+       width = 7, height = 5, dpi = 300)
+
+compare_no_notes <- sq_avgs_all %>%
+  select(midden, no_notes_all = no_notes) %>%
+  left_join(
+    sq_avgs_5 %>% select(midden, no_notes_5 = no_notes),
+    by = "midden"
+  )
+
+p_no_notes <- compare_no_notes %>%
+  ggplot(aes(x = no_notes_5, y = no_notes_all)) +
+  geom_point(na.rm = TRUE) +
+  geom_abline() +
+  labs(
+    x = "Mean no. notes (first 5 calls)",
+    y = "Mean no. notes (all calls)"
+  )
+
+p_no_notes
+
+ggsave("figures/compare_no_notes.png",
+       plot = p_no_notes,
+       width = 7, height = 5, dpi = 300)
+
+compare_note_rate <- sq_avgs_all %>%
+  select(midden, note_rate_all = note_rate) %>%
+  left_join(
+    sq_avgs_5 %>% select(midden, note_rate_5 = note_rate),
+    by = "midden"
+  )
+
+p_note_rate <- compare_note_rate %>%
+  ggplot(aes(x = note_rate_5, y = note_rate_all)) +
+  geom_point(na.rm = TRUE) +
+  geom_abline() +
+  labs(
+    x = "Note rate mean (first 5 calls)",
+    y = "Note rate mean (all calls)"
+  )
+
+p_note_rate
+
+ggsave("figures/compare_note_rate.png",
+       plot = p_note_rate,
+       width = 7, height = 5, dpi = 300)
+
+
+compare_duration <- sq_avgs_all %>%
+  select(midden, duration_all = duration) %>%
+  left_join(
+    sq_avgs_5 %>% select(midden, duration_5 = duration),
+    by = "midden"
+  )
+
+p_duration <- compare_duration %>%
+  ggplot(aes(x = duration_5, y = duration_all)) +
+  geom_point(na.rm = TRUE) +
+  geom_abline() +
+  labs(
+    x = "Mean note duration (first 5 calls)",
+    y = "Mean note duration (all calls)"
+  )
+
+p_duration
+
+ggsave("figures/compare_duration.png",
+       plot = p_duration,
+       width = 7, height = 5, dpi = 300)
+
+
+compare_break_s <- sq_avgs_all %>%
+  select(midden, break_s_all = break_s) %>%
+  left_join(
+    sq_avgs_5 %>% select(midden, break_s_5 = break_s),
+    by = "midden"
+  )
+
+p_break_s <- compare_break_s %>%
+  ggplot(aes(x = break_s_5, y = break_s_all)) +
+  geom_point(na.rm = TRUE) +
+  geom_abline() +
+  labs(
+    x = "Mean break_s (first 5 calls)",
+    y = "Mean break_s (all calls)"
+  )
+
+p_break_s
+
+ggsave("figures/compare_break_s.png",
+       plot = p_break_s,
+       width = 7, height = 5, dpi = 300)
+
+compare_disttomax <- sq_avgs_all %>%
+  select(midden, disttomax_all = disttomax) %>%
+  left_join(
+    sq_avgs_5 %>% select(midden, disttomax_5 = disttomax),
+    by = "midden"
+  )
+
+p_disttomax <- compare_disttomax %>%
+  ggplot(aes(x = disttomax_5, y = disttomax_all)) +
+  geom_point(na.rm = TRUE) +
+  geom_abline() +
+  labs(
+    x = "Mean disttomax (first 5 calls)",
+    y = "Mean disttomax (all calls)"
+  )
+
+p_disttomax
+
+ggsave("figures/compare_disttomax.png",
+       plot = p_disttomax,
+       width = 7, height = 5, dpi = 300)
+
+compare_rms <- sq_avgs_all %>%
+  select(midden, rms_all = rms) %>%
+  left_join(
+    sq_avgs_5 %>% select(midden, rms_5 = rms),
+    by = "midden"
+  )
+
+p_rms <- compare_rms %>%
+  ggplot(aes(x = rms_5, y = rms_all)) +
+  geom_point(na.rm = TRUE) +
+  geom_abline() +
+  labs(
+    x = "Mean RMS (first 5 calls)",
+    y = "Mean RMS (all calls)"
+  )
+
+p_rms
+
+ggsave("figures/compare_rms.png",
+       plot = p_rms,
+       width = 7, height = 5, dpi = 300)
+
+compare_energy <- sq_avgs_all %>%
+  select(midden, energy_all = energy) %>%
+  left_join(
+    sq_avgs_5 %>% select(midden, energy_5 = energy),
+    by = "midden"
+  )
+
+p_energy <- compare_energy %>%
+  ggplot(aes(x = energy_5, y = energy_all)) +
+  geom_point(na.rm = TRUE) +
+  geom_abline() +
+  labs(
+    x = "Mean energy (first 5 calls)",
+    y = "Mean energy (all calls)"
+  )
+
+p_energy
+
+ggsave("figures/compare_energy.png",
+       plot = p_energy,
+       width = 7, height = 5, dpi = 300)
+
+compare_peaktopeak <- sq_avgs_all %>%
+  select(midden, peaktopeak_all = peaktopeak) %>%
+  left_join(
+    sq_avgs_5 %>% select(midden, peaktopeak_5 = peaktopeak),
+    by = "midden"
+  )
+p_peaktopeak <- compare_peaktopeak %>%
+  ggplot(aes(x = peaktopeak_5, y = peaktopeak_all)) +
+  geom_point(na.rm = TRUE) +
+  geom_abline() +
+  labs(
+    x = "Mean peak-to-peak (first 5 calls)",
+    y = "Mean peak-to-peak (all calls)"
+  )
+
+p_peaktopeak
+
+ggsave("figures/compare_peaktopeak.png",
+       plot = p_peaktopeak,
+       width = 7, height = 5, dpi = 300)
+
+compare_peak_freq <- sq_avgs_all %>%
+  select(midden, peak_freq_all = peak_freq_mean) %>%
+  left_join(
+    sq_avgs_5 %>% select(midden, peak_freq_5 = peak_freq_mean),
+    by = "midden"
+  )
+
+p_peak_freq <- compare_peak_freq %>%
+  ggplot(aes(x = peak_freq_5, y = peak_freq_all)) +
+  geom_point(na.rm = TRUE) +
+  geom_abline() +
+  labs(
+    x = "Peak frequency mean (first 5 calls)",
+    y = "Peak frequency mean (all calls)"
+  )
+
+p_peak_freq
+
+ggsave("figures/compare_peak_freq_mean.png",
+       plot = p_peak_freq,
+       width = 7, height = 5, dpi = 300)
+
+compare_peak_ampl <- sq_avgs_all %>%
+  select(midden, peak_ampl_all = peak_ampl_mean) %>%
+  left_join(
+    sq_avgs_5 %>% select(midden, peak_ampl_5 = peak_ampl_mean),
+    by = "midden"
+  )
+
+p_peak_ampl <- compare_peak_ampl %>%
+  ggplot(aes(x = peak_ampl_5, y = peak_ampl_all)) +
+  geom_point(na.rm = TRUE) +
+  geom_abline() +
+  labs(
+    x = "Peak amplitude mean (first 5 calls)",
+    y = "Peak amplitude mean (all calls)"
+  )
+
+p_peak_ampl
+
+ggsave("figures/compare_peak_ampl_mean.png",
+       plot = p_peak_ampl,
+       width = 7, height = 5, dpi = 300)
+
+compare_min_freq <- sq_avgs_all %>%
+  select(midden, min_freq_all = min_freq_mean) %>%
+  left_join(
+    sq_avgs_5 %>% select(midden, min_freq_5 = min_freq_mean),
+    by = "midden"
+  )
+p_min_freq <- compare_min_freq %>%
+  ggplot(aes(x = min_freq_5, y = min_freq_all)) +
+  geom_point(na.rm = TRUE) +
+  geom_abline() +
+  labs(
+    x = "Min frequency mean (first 5 calls)",
+    y = "Min frequency mean (all calls)"
+  )
+
+p_min_freq
+
+ggsave("figures/compare_min_freq_mean.png",
+       plot = p_min_freq,
+       width = 7, height = 5, dpi = 300)
+
+compare_max_freq <- sq_avgs_all %>%
+  select(midden, max_freq_all = max_freq_mean) %>%
+  left_join(
+    sq_avgs_5 %>% select(midden, max_freq_5 = max_freq_mean),
+    by = "midden"
+  )
+
+p_max_freq <- compare_max_freq %>%
+  ggplot(aes(x = max_freq_5, y = max_freq_all)) +
+  geom_point(na.rm = TRUE) +
+  geom_abline() +
+  labs(
+    x = "Max frequency mean (first 5 calls)",
+    y = "Max frequency mean (all calls)"
+  )
+
+p_max_freq
+
+ggsave("figures/compare_max_freq_mean.png",
+       plot = p_max_freq,
+       width = 7, height = 5, dpi = 300)
+
+compare_bandw <- sq_avgs_all %>%
+  select(midden, bandw_all = bandw_mean) %>%
+  left_join(
+    sq_avgs_5 %>% select(midden, bandw_5 = bandw_mean),
+    by = "midden"
+  )
+p_bandw <- compare_bandw %>%
+  ggplot(aes(x = bandw_5, y = bandw_all)) +
+  geom_point(na.rm = TRUE) +
+  geom_abline() +
+  labs(
+    x = "Bandwidth mean (first 5 calls)",
+    y = "Bandwidth mean (all calls)"
+  )
+
+p_bandw
+
+ggsave("figures/compare_bandw_mean.png",
+       plot = p_bandw,
+       width = 7, height = 5, dpi = 300)
+
+compare_quart25 <- sq_avgs_all %>%
+  select(midden, quart25_all = quart_25_mean) %>%
+  left_join(
+    sq_avgs_5 %>% select(midden, quart25_5 = quart_25_mean),
+    by = "midden"
+  )
+p_quart25 <- compare_quart25 %>%
+  ggplot(aes(x = quart25_5, y = quart25_all)) +
+  geom_point(na.rm = TRUE) +
+  geom_abline() +
+  labs(
+    x = "Quartile 25% mean (first 5 calls)",
+    y = "Quartile 25% mean (all calls)"
+  )
+
+p_quart25
+
+ggsave("figures/compare_quart_25_mean.png",
+       plot = p_quart25,
+       width = 7, height = 5, dpi = 300)
+
+compare_quart50 <- sq_avgs_all %>%
+  select(midden, quart50_all = quart_50_mean) %>%
+  left_join(
+    sq_avgs_5 %>% select(midden, quart50_5 = quart_50_mean),
+    by = "midden"
+  )
+p_quart50 <- compare_quart50 %>%
+  ggplot(aes(x = quart50_5, y = quart50_all)) +
+  geom_point(na.rm = TRUE) +
+  geom_abline() +
+  labs(
+    x = "Quartile 50% mean (first 5 calls)",
+    y = "Quartile 50% mean (all calls)"
+  )
+
+p_quart50
+
+ggsave("figures/compare_quart_50_mean.png",
+       plot = p_quart50,
+       width = 7, height = 5, dpi = 300)
+
+compare_quart75 <- sq_avgs_all %>%
+  select(midden, quart75_all = quart_75_mean) %>%
+  left_join(
+    sq_avgs_5 %>% select(midden, quart75_5 = quart_75_mean),
+    by = "midden"
+  )
+p_quart75 <- compare_quart75 %>%
+  ggplot(aes(x = quart75_5, y = quart75_all)) +
+  geom_point(na.rm = TRUE) +
+  geom_abline() +
+  labs(
+    x = "Quartile 75% mean (first 5 calls)",
+    y = "Quartile 75% mean (all calls)"
+  )
+
+p_quart75
+
+ggsave("figures/compare_quart_75_mean.png",
+       plot = p_quart75,
+       width = 7, height = 5, dpi = 300)
+
+# All parameters look pretty good. Going to keep all calls
+
+```
+
+## Visualization
+
+Create figures for a clear look into data.
+
+```{r}
+
+# Just going to look at figs for mt graham squirrels.
+
+# make a table that links each squirrel (midden) to its site (MG)
+sq_site <- sq_data_avgs %>%
+  select(midden, site) %>%
+  distinct()
+
+# add the site  onto the call data, then keep only Mount Graham calls
+call_avgs_mg <- call_avgs %>%
+  left_join(sq_site, by = "midden") %>%
+  filter(site == "MG")
+
+# for MG squirrels, calculate the mean and SD of call_duration across calls
+call_duration_by_sq_mg <- call_avgs_mg %>%
+  group_by(midden) %>%
+  summarise(
+    mean_call_duration = mean(call_duration, na.rm = TRUE),
+    sd_call_duration = sd(call_duration, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+p_call_duration_mg <- call_duration_by_sq_mg %>%
+  ggplot(aes(x = reorder(factor(midden), mean_call_duration), y = mean_call_duration)) +
+  geom_pointrange(
+    aes(ymin = mean_call_duration - sd_call_duration,
+        ymax = mean_call_duration + sd_call_duration),
+    na.rm = TRUE
+  ) +
+  labs(x = "Mount Graham squirrels (midden)", y = "Call duration: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_call_duration_mg
+
+ggsave("figures/var_call_duration_MG.png",
+       plot = p_call_duration_mg,
+       width = 8, height = 5, dpi = 300)
+
+#  for MG squirrels, calculate mean and SD of note_rate across calls
+note_rate_mg <- call_avgs_mg %>%
+  group_by(midden) %>%
+  summarise(
+    mean_note_rate = mean(note_rate, na.rm = TRUE),
+    sd_note_rate = sd(note_rate, na.rm = TRUE)
+  ) %>%
+  ungroup()
+p_note_rate_mg <- note_rate_mg %>%
+  ggplot(aes(x = reorder(factor(midden), mean_note_rate), y = mean_note_rate)) +
+  geom_pointrange(
+    aes(ymin = mean_note_rate - sd_note_rate,
+        ymax = mean_note_rate + sd_note_rate),
+    na.rm = TRUE
+  ) +
+  labs(x = "Mount Graham squirrels (midden)", y = "Note rate: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_note_rate_mg
+ggsave("figures/var_note_rate_MG.png",
+       plot = p_note_rate_mg,
+       width = 8, height = 5, dpi = 300)
+
+# duration param MG
+# mean + SD of duration for each MG squirrel
+duration_mg <- call_avgs_mg %>%
+  group_by(midden) %>%
+  summarise(
+    mean_duration = mean(duration, na.rm = TRUE),
+    sd_duration = sd(duration, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_duration_mg <- duration_mg %>%
+  ggplot(aes(x = reorder(factor(midden), mean_duration), y = mean_duration)) +
+  geom_pointrange(
+    aes(ymin = mean_duration - sd_duration,
+        ymax = mean_duration + sd_duration),
+    na.rm = TRUE
+  ) +
+  labs(x = "Mount Graham squirrels (midden)", y = "Duration: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_duration_mg
+
+# save into figures folder
+ggsave("figures/var_duration_MG.png",
+       plot = p_duration_mg,
+       width = 8, height = 5, dpi = 300)
+
+# mean + SD of break_s for each MG squirrel
+break_s_mg <- call_avgs_mg %>%
+  group_by(midden) %>%
+  summarise(
+    mean_break_s = mean(break_s, na.rm = TRUE),
+    sd_break_s = sd(break_s, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_break_s_mg <- break_s_mg %>%
+  ggplot(aes(x = reorder(factor(midden), mean_break_s), y = mean_break_s)) +
+  geom_pointrange(
+    aes(ymin = mean_break_s - sd_break_s,
+        ymax = mean_break_s + sd_break_s),
+    na.rm = TRUE
+  ) +
+  labs(x = "Mount Graham squirrels (midden)", y = "break_s: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_break_s_mg
+
+# save into figures folder
+ggsave("figures/var_break_s_MG.png",
+       plot = p_break_s_mg,
+       width = 8, height = 5, dpi = 300)
+
+
+# mean + SD of disttomax for each MG squirrel
+disttomax_mg <- call_avgs_mg %>%
+  group_by(midden) %>%
+  summarise(
+    mean_disttomax = mean(disttomax, na.rm = TRUE),
+    sd_disttomax = sd(disttomax, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_disttomax_mg <- disttomax_mg %>%
+  ggplot(aes(x = reorder(factor(midden), mean_disttomax), y = mean_disttomax)) +
+  geom_pointrange(
+    aes(ymin = mean_disttomax - sd_disttomax,
+        ymax = mean_disttomax + sd_disttomax),
+    na.rm = TRUE
+  ) +
+  labs(x = "Mount Graham squirrels (midden)", y = "disttomax: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_disttomax_mg
+
+# save into figures folder
+ggsave("figures/var_disttomax_MG.png",
+       plot = p_disttomax_mg,
+       width = 8, height = 5, dpi = 300)
+
+# mean + SD of rms for each MG squirrel
+rms_mg <- call_avgs_mg %>%
+  group_by(midden) %>%
+  summarise(
+    mean_rms = mean(rms, na.rm = TRUE),
+    sd_rms = sd(rms, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_rms_mg <- rms_mg %>%
+  ggplot(aes(x = reorder(factor(midden), mean_rms), y = mean_rms)) +
+  geom_pointrange(
+    aes(ymin = mean_rms - sd_rms,
+        ymax = mean_rms + sd_rms),
+    na.rm = TRUE
+  ) +
+  labs(x = "Mount Graham squirrels (midden)", y = "RMS: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_rms_mg
+
+# save into figures folder
+ggsave("figures/var_rms_MG.png",
+       plot = p_rms_mg,
+       width = 8, height = 5, dpi = 300)
+
+# mean + SD of energy for each MG squirrel
+energy_mg <- call_avgs_mg %>%
+  group_by(midden) %>%
+  summarise(
+    mean_energy = mean(energy, na.rm = TRUE),
+    sd_energy = sd(energy, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_energy_mg <- energy_mg %>%
+  ggplot(aes(x = reorder(factor(midden), mean_energy), y = mean_energy)) +
+  geom_pointrange(
+    aes(ymin = mean_energy - sd_energy,
+        ymax = mean_energy + sd_energy),
+    na.rm = TRUE
+  ) +
+  labs(x = "Mount Graham squirrels (midden)", y = "Energy: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_energy_mg
+
+# save into figures folder
+ggsave("figures/var_energy_MG.png",
+       plot = p_energy_mg,
+       width = 8, height = 5, dpi = 300)
+
+# mean + SD of peaktopeak for each MG squirrel
+peaktopeak_mg <- call_avgs_mg %>%
+  group_by(midden) %>%
+  summarise(
+    mean_peaktopeak = mean(peaktopeak, na.rm = TRUE),
+    sd_peaktopeak = sd(peaktopeak, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_peaktopeak_mg <- peaktopeak_mg %>%
+  ggplot(aes(x = reorder(factor(midden), mean_peaktopeak), y = mean_peaktopeak)) +
+  geom_pointrange(
+    aes(ymin = mean_peaktopeak - sd_peaktopeak,
+        ymax = mean_peaktopeak + sd_peaktopeak),
+    na.rm = TRUE
+  ) +
+  labs(x = "Mount Graham squirrels (midden)", y = "Peak-to-peak: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_peaktopeak_mg
+
+# save into figures folder
+ggsave("figures/var_peaktopeak_MG.png",
+       plot = p_peaktopeak_mg,
+       width = 8, height = 5, dpi = 300)
+
+# mean + SD of peak_freq_mean for each MG squirrel
+peak_freq_mg <- call_avgs_mg %>%
+  group_by(midden) %>%
+  summarise(
+    mean_peak_freq = mean(peak_freq_mean, na.rm = TRUE),
+    sd_peak_freq = sd(peak_freq_mean, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_peak_freq_mg <- peak_freq_mg %>%
+  ggplot(aes(x = reorder(factor(midden), mean_peak_freq), y = mean_peak_freq)) +
+  geom_pointrange(
+    aes(ymin = mean_peak_freq - sd_peak_freq,
+        ymax = mean_peak_freq + sd_peak_freq),
+    na.rm = TRUE
+  ) +
+  labs(x = "Mount Graham squirrels (midden)", y = "Peak frequency mean: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_peak_freq_mg
+
+# save into figures folder
+ggsave("figures/var_peak_freq_mean_MG.png",
+       plot = p_peak_freq_mg,
+       width = 8, height = 5, dpi = 300)
+
+# mean + SD of peak_ampl_mean for each MG squirrel
+peak_ampl_mg <- call_avgs_mg %>%
+  group_by(midden) %>%
+  summarise(
+    mean_peak_ampl = mean(peak_ampl_mean, na.rm = TRUE),
+    sd_peak_ampl = sd(peak_ampl_mean, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_peak_ampl_mg <- peak_ampl_mg %>%
+  ggplot(aes(x = reorder(factor(midden), mean_peak_ampl), y = mean_peak_ampl)) +
+  geom_pointrange(
+    aes(ymin = mean_peak_ampl - sd_peak_ampl,
+        ymax = mean_peak_ampl + sd_peak_ampl),
+    na.rm = TRUE
+  ) +
+  labs(x = "Mount Graham squirrels (midden)", y = "Peak amplitude mean: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_peak_ampl_mg
+
+# save into figures folder
+ggsave("figures/var_peak_ampl_mean_MG.png",
+       plot = p_peak_ampl_mg,
+       width = 8, height = 5, dpi = 300)
+
+# mean + SD of min_freq_mean for each MG squirrel
+min_freq_mg <- call_avgs_mg %>%
+  group_by(midden) %>%
+  summarise(
+    mean_min_freq = mean(min_freq_mean, na.rm = TRUE),
+    sd_min_freq = sd(min_freq_mean, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_min_freq_mg <- min_freq_mg %>%
+  ggplot(aes(x = reorder(factor(midden), mean_min_freq), y = mean_min_freq)) +
+  geom_pointrange(
+    aes(ymin = mean_min_freq - sd_min_freq,
+        ymax = mean_min_freq + sd_min_freq),
+    na.rm = TRUE
+  ) +
+  labs(x = "Mount Graham squirrels (midden)", y = "Min frequency mean: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_min_freq_mg
+
+# save into figures folder
+ggsave("figures/var_min_freq_mean_MG.png",
+       plot = p_min_freq_mg,
+       width = 8, height = 5, dpi = 300)
+
+# mean + SD of max_freq_mean for each MG squirrel
+max_freq_mg <- call_avgs_mg %>%
+  group_by(midden) %>%
+  summarise(
+    mean_max_freq = mean(max_freq_mean, na.rm = TRUE),
+    sd_max_freq = sd(max_freq_mean, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_max_freq_mg <- max_freq_mg %>%
+  ggplot(aes(x = reorder(factor(midden), mean_max_freq), y = mean_max_freq)) +
+  geom_pointrange(
+    aes(ymin = mean_max_freq - sd_max_freq,
+        ymax = mean_max_freq + sd_max_freq),
+    na.rm = TRUE
+  ) +
+  labs(x = "Mount Graham squirrels (midden)", y = "Max frequency mean: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_max_freq_mg
+
+# save into figures folder
+ggsave("figures/var_max_freq_mean_MG.png",
+       plot = p_max_freq_mg,
+       width = 8, height = 5, dpi = 300)
+
+# mean + SD of bandw_mean for each MG squirrel
+bandw_mg <- call_avgs_mg %>%
+  group_by(midden) %>%
+  summarise(
+    mean_bandw = mean(bandw_mean, na.rm = TRUE),
+    sd_bandw = sd(bandw_mean, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_bandw_mg <- bandw_mg %>%
+  ggplot(aes(x = reorder(factor(midden), mean_bandw), y = mean_bandw)) +
+  geom_pointrange(
+    aes(ymin = mean_bandw - sd_bandw,
+        ymax = mean_bandw + sd_bandw),
+    na.rm = TRUE
+  ) +
+  labs(x = "Mount Graham squirrels (midden)", y = "Bandwidth mean: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_bandw_mg
+
+# save into figures folder
+ggsave("figures/var_bandw_mean_MG.png",
+       plot = p_bandw_mg,
+       width = 8, height = 5, dpi = 300)
+
+# mean + SD of quart_25_mean for each MG squirrel
+quart25_mg <- call_avgs_mg %>%
+  group_by(midden) %>%
+  summarise(
+    mean_quart25 = mean(quart_25_mean, na.rm = TRUE),
+    sd_quart25 = sd(quart_25_mean, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_quart25_mg <- quart25_mg %>%
+  ggplot(aes(x = reorder(factor(midden), mean_quart25), y = mean_quart25)) +
+  geom_pointrange(
+    aes(ymin = mean_quart25 - sd_quart25,
+        ymax = mean_quart25 + sd_quart25),
+    na.rm = TRUE
+  ) +
+  labs(x = "Mount Graham squirrels (midden)", y = "Quartile 25% mean: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_quart25_mg
+
+# save into figures folder
+ggsave("figures/var_quart_25_mean_MG.png",
+       plot = p_quart25_mg,
+       width = 8, height = 5, dpi = 300)
+
+# mean + SD of quart_50_mean for each MG squirrel
+quart50_mg <- call_avgs_mg %>%
+  group_by(midden) %>%
+  summarise(
+    mean_quart50 = mean(quart_50_mean, na.rm = TRUE),
+    sd_quart50 = sd(quart_50_mean, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_quart50_mg <- quart50_mg %>%
+  ggplot(aes(x = reorder(factor(midden), mean_quart50), y = mean_quart50)) +
+  geom_pointrange(
+    aes(ymin = mean_quart50 - sd_quart50,
+        ymax = mean_quart50 + sd_quart50),
+    na.rm = TRUE
+  ) +
+  labs(x = "Mount Graham squirrels (midden)", y = "Quartile 50% mean: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_quart50_mg
+
+# save into figures folder
+ggsave("figures/var_quart_50_mean_MG.png",
+       plot = p_quart50_mg,
+       width = 8, height = 5, dpi = 300)
+
+# mean + SD of quart_75_mean for each MG squirrel
+quart75_mg <- call_avgs_mg %>%
+  group_by(midden) %>%
+  summarise(
+    mean_quart75 = mean(quart_75_mean, na.rm = TRUE),
+    sd_quart75 = sd(quart_75_mean, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_quart75_mg <- quart75_mg %>%
+  ggplot(aes(x = reorder(factor(midden), mean_quart75), y = mean_quart75)) +
+  geom_pointrange(
+    aes(ymin = mean_quart75 - sd_quart75,
+        ymax = mean_quart75 + sd_quart75),
+    na.rm = TRUE
+  ) +
+  labs(x = "Mount Graham squirrels (midden)", y = "Quartile 75% mean: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_quart75_mg
+
+# save into figures folder
+ggsave("figures/var_quart_75_mean_MG.png",
+       plot = p_quart75_mg,
+       width = 8, height = 5, dpi = 300)
+
+# mean + SD of entropy_mean for each MG squirrel
+entropy_mg <- call_avgs_mg %>%
+  group_by(midden) %>%
+  summarise(
+    mean_entropy = mean(entropy_mean, na.rm = TRUE),
+    sd_entropy = sd(entropy_mean, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_entropy_mg <- entropy_mg %>%
+  ggplot(aes(x = reorder(factor(midden), mean_entropy), y = mean_entropy)) +
+  geom_pointrange(
+    aes(ymin = mean_entropy - sd_entropy,
+        ymax = mean_entropy + sd_entropy),
+    na.rm = TRUE
+  ) +
+  labs(x = "Mount Graham squirrels (midden)", y = "Entropy mean: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_entropy_mg
+
+# save into figures folder
+ggsave("figures/var_entropy_mean_MG.png",
+       plot = p_entropy_mg,
+       width = 8, height = 5, dpi = 300)
+
+
+```
+
+## Stats
+
+Include standard error, significance indicators, and confidence intervals.
+
+```{r}
+
+```
+
+## Population differences
+
+Split MG from WM
+
+```{r}
+
+```
+
+## Visualization
+
+```{r}
+
+```
+
+## Stats
+
+```{r}
+
+```
