@@ -14,17 +14,12 @@ Load in packages and the data sets I will be using.
 ```{r}
 library(tidyverse)
 
-sq_data <- read_csv("data_raw/combined_sq_data2.csv")
+sq_data <- read_csv("data_raw/combined_sq_data4.csv")
+view(sq_data)
 
 detections <- read_csv("data_raw/01jan2026_detections4.csv")
-```
 
-## Call level Averages
-
-Taking the averages of each of the calls per animal. Fix any oddities.
-
-```{r}
-# turn "_" into NA, then numeric
+# Clean break_s: "_" = missing, then make numeric
 detections <- detections %>%
   mutate(
     break_s = as.character(break_s),
@@ -32,13 +27,22 @@ detections <- detections %>%
     break_s = as.numeric(break_s)
   )
 
+# combine data
+sq_rattle_data <- detections %>%
+  left_join(sq_data, by = "midden")
 
-glimpse(detections)
+```
 
-# Call-level averages (one row per call)
+## Call level Averages
 
-call_avgs <- detections %>%
-  group_by(midden, filename) %>%
+Taking the averages of each of the calls per animal. Fix any oddities.
+
+```{r}
+
+# Call-level averages by sq_ID (one row per call)
+
+call_avgs <- sq_rattle_data %>%
+  group_by(sq_ID, filename) %>%
   summarise(
     no_notes = n(),
     call_duration = first(call_duration),
@@ -75,8 +79,10 @@ call_avgs
 Taking the averages of all the calls per animal.
 
 ```{r}
+
+
 sq_avgs <- call_avgs %>%
-  group_by(midden) %>%
+  group_by(sq_ID) %>%
   summarise(
     n_calls = n(),
 
@@ -109,18 +115,11 @@ sq_avgs <- call_avgs %>%
 sq_avgs
 
 
-
-## Join sq_avgs to sq data
-
-sq_data_avgs <- sq_data %>%
-  left_join(sq_avgs, by = "midden")
-sq_data_avgs
-
 # worried that sqs with 8 calls vs sqs with 4-5 calls will create bias. Does having extra calls (like 8 instead of 5) change the squirrel’s average? Gonna check differences to see if i need to standardize sqs to 5 calls and eliminate extra calls. I calculated squirrel-level means two ways.first, I used all available calls per squirrel and using the first five calls per squirrel as a sensitivity check.
 
 # all calls
 sq_avgs_all <- call_avgs %>%
-  group_by(midden) %>%
+  group_by(sq_ID) %>%
   summarise(
     n_calls = n(),
 
@@ -153,7 +152,7 @@ sq_avgs_all <- call_avgs %>%
 
 # first 5 calls per squirrel
 sq_avgs_5 <- call_avgs %>%
-  group_by(midden) %>%
+  group_by(sq_ID) %>%
   slice_head(n = 5) %>%
   summarise(
     n_calls = n(),
@@ -186,10 +185,10 @@ sq_avgs_5 <- call_avgs %>%
 
 # compare parameters
 compare_entropy <- sq_avgs_all %>%
-  select(midden, entropy_all = entropy_mean) %>%
+  select(sq_ID, entropy_all = entropy_mean) %>%
   left_join(
-    sq_avgs_5 %>% select(midden, entropy_5 = entropy_mean),
-    by = "midden"
+    sq_avgs_5 %>% select(sq_ID, entropy_5 = entropy_mean),
+    by = "sq_ID"
   )
 
 p_entropy <- compare_entropy %>%
@@ -205,6 +204,12 @@ p_entropy
 
 ggsave("figures/compare_entropy.png", plot = p_entropy, width = 7, height = 5, dpi = 300)
 
+compare_call_duration <- sq_avgs_all %>%
+  select(sq_ID, call_duration_all = call_duration) %>%
+  left_join(
+    sq_avgs_5 %>% select(sq_ID, call_duration_5 = call_duration),
+    by = "sq_ID"
+  )
 p_call_duration <- compare_call_duration %>%
   ggplot(aes(x = call_duration_5, y = call_duration_all)) +
   geom_point(na.rm = TRUE) +
@@ -221,10 +226,10 @@ ggsave("figures/compare_call_duration.png",
        width = 7, height = 5, dpi = 300)
 
 compare_no_notes <- sq_avgs_all %>%
-  select(midden, no_notes_all = no_notes) %>%
+  select(sq_ID, no_notes_all = no_notes) %>%
   left_join(
-    sq_avgs_5 %>% select(midden, no_notes_5 = no_notes),
-    by = "midden"
+    sq_avgs_5 %>% select(sq_ID, no_notes_5 = no_notes),
+    by = "sq_ID"
   )
 
 p_no_notes <- compare_no_notes %>%
@@ -243,10 +248,10 @@ ggsave("figures/compare_no_notes.png",
        width = 7, height = 5, dpi = 300)
 
 compare_note_rate <- sq_avgs_all %>%
-  select(midden, note_rate_all = note_rate) %>%
+  select(sq_ID, note_rate_all = note_rate) %>%
   left_join(
-    sq_avgs_5 %>% select(midden, note_rate_5 = note_rate),
-    by = "midden"
+    sq_avgs_5 %>% select(sq_ID, note_rate_5 = note_rate),
+    by = "sq_ID"
   )
 
 p_note_rate <- compare_note_rate %>%
@@ -266,10 +271,10 @@ ggsave("figures/compare_note_rate.png",
 
 
 compare_duration <- sq_avgs_all %>%
-  select(midden, duration_all = duration) %>%
+  select(sq_ID, duration_all = duration) %>%
   left_join(
-    sq_avgs_5 %>% select(midden, duration_5 = duration),
-    by = "midden"
+    sq_avgs_5 %>% select(sq_ID, duration_5 = duration),
+    by = "sq_ID"
   )
 
 p_duration <- compare_duration %>%
@@ -289,10 +294,10 @@ ggsave("figures/compare_duration.png",
 
 
 compare_break_s <- sq_avgs_all %>%
-  select(midden, break_s_all = break_s) %>%
+  select(sq_ID, break_s_all = break_s) %>%
   left_join(
-    sq_avgs_5 %>% select(midden, break_s_5 = break_s),
-    by = "midden"
+    sq_avgs_5 %>% select(sq_ID, break_s_5 = break_s),
+    by = "sq_ID"
   )
 
 p_break_s <- compare_break_s %>%
@@ -311,10 +316,10 @@ ggsave("figures/compare_break_s.png",
        width = 7, height = 5, dpi = 300)
 
 compare_disttomax <- sq_avgs_all %>%
-  select(midden, disttomax_all = disttomax) %>%
+  select(sq_ID, disttomax_all = disttomax) %>%
   left_join(
-    sq_avgs_5 %>% select(midden, disttomax_5 = disttomax),
-    by = "midden"
+    sq_avgs_5 %>% select(sq_ID, disttomax_5 = disttomax),
+    by = "sq_ID"
   )
 
 p_disttomax <- compare_disttomax %>%
@@ -333,10 +338,10 @@ ggsave("figures/compare_disttomax.png",
        width = 7, height = 5, dpi = 300)
 
 compare_rms <- sq_avgs_all %>%
-  select(midden, rms_all = rms) %>%
+  select(sq_ID, rms_all = rms) %>%
   left_join(
-    sq_avgs_5 %>% select(midden, rms_5 = rms),
-    by = "midden"
+    sq_avgs_5 %>% select(sq_ID, rms_5 = rms),
+    by = "sq_ID"
   )
 
 p_rms <- compare_rms %>%
@@ -355,10 +360,10 @@ ggsave("figures/compare_rms.png",
        width = 7, height = 5, dpi = 300)
 
 compare_energy <- sq_avgs_all %>%
-  select(midden, energy_all = energy) %>%
+  select(sq_ID, energy_all = energy) %>%
   left_join(
-    sq_avgs_5 %>% select(midden, energy_5 = energy),
-    by = "midden"
+    sq_avgs_5 %>% select(sq_ID, energy_5 = energy),
+    by = "sq_ID"
   )
 
 p_energy <- compare_energy %>%
@@ -377,10 +382,10 @@ ggsave("figures/compare_energy.png",
        width = 7, height = 5, dpi = 300)
 
 compare_peaktopeak <- sq_avgs_all %>%
-  select(midden, peaktopeak_all = peaktopeak) %>%
+  select(sq_ID, peaktopeak_all = peaktopeak) %>%
   left_join(
-    sq_avgs_5 %>% select(midden, peaktopeak_5 = peaktopeak),
-    by = "midden"
+    sq_avgs_5 %>% select(sq_ID, peaktopeak_5 = peaktopeak),
+    by = "sq_ID"
   )
 p_peaktopeak <- compare_peaktopeak %>%
   ggplot(aes(x = peaktopeak_5, y = peaktopeak_all)) +
@@ -398,10 +403,10 @@ ggsave("figures/compare_peaktopeak.png",
        width = 7, height = 5, dpi = 300)
 
 compare_peak_freq <- sq_avgs_all %>%
-  select(midden, peak_freq_all = peak_freq_mean) %>%
+  select(sq_ID, peak_freq_all = peak_freq_mean) %>%
   left_join(
-    sq_avgs_5 %>% select(midden, peak_freq_5 = peak_freq_mean),
-    by = "midden"
+    sq_avgs_5 %>% select(sq_ID, peak_freq_5 = peak_freq_mean),
+    by = "sq_ID"
   )
 
 p_peak_freq <- compare_peak_freq %>%
@@ -420,10 +425,10 @@ ggsave("figures/compare_peak_freq_mean.png",
        width = 7, height = 5, dpi = 300)
 
 compare_peak_ampl <- sq_avgs_all %>%
-  select(midden, peak_ampl_all = peak_ampl_mean) %>%
+  select(sq_ID, peak_ampl_all = peak_ampl_mean) %>%
   left_join(
-    sq_avgs_5 %>% select(midden, peak_ampl_5 = peak_ampl_mean),
-    by = "midden"
+    sq_avgs_5 %>% select(sq_ID, peak_ampl_5 = peak_ampl_mean),
+    by = "sq_ID"
   )
 
 p_peak_ampl <- compare_peak_ampl %>%
@@ -442,10 +447,10 @@ ggsave("figures/compare_peak_ampl_mean.png",
        width = 7, height = 5, dpi = 300)
 
 compare_min_freq <- sq_avgs_all %>%
-  select(midden, min_freq_all = min_freq_mean) %>%
+  select(sq_ID, min_freq_all = min_freq_mean) %>%
   left_join(
-    sq_avgs_5 %>% select(midden, min_freq_5 = min_freq_mean),
-    by = "midden"
+    sq_avgs_5 %>% select(sq_ID, min_freq_5 = min_freq_mean),
+    by = "sq_ID"
   )
 p_min_freq <- compare_min_freq %>%
   ggplot(aes(x = min_freq_5, y = min_freq_all)) +
@@ -463,10 +468,10 @@ ggsave("figures/compare_min_freq_mean.png",
        width = 7, height = 5, dpi = 300)
 
 compare_max_freq <- sq_avgs_all %>%
-  select(midden, max_freq_all = max_freq_mean) %>%
+  select(sq_ID, max_freq_all = max_freq_mean) %>%
   left_join(
-    sq_avgs_5 %>% select(midden, max_freq_5 = max_freq_mean),
-    by = "midden"
+    sq_avgs_5 %>% select(sq_ID, max_freq_5 = max_freq_mean),
+    by = "sq_ID"
   )
 
 p_max_freq <- compare_max_freq %>%
@@ -485,10 +490,10 @@ ggsave("figures/compare_max_freq_mean.png",
        width = 7, height = 5, dpi = 300)
 
 compare_bandw <- sq_avgs_all %>%
-  select(midden, bandw_all = bandw_mean) %>%
+  select(sq_ID, bandw_all = bandw_mean) %>%
   left_join(
-    sq_avgs_5 %>% select(midden, bandw_5 = bandw_mean),
-    by = "midden"
+    sq_avgs_5 %>% select(sq_ID, bandw_5 = bandw_mean),
+    by = "sq_ID"
   )
 p_bandw <- compare_bandw %>%
   ggplot(aes(x = bandw_5, y = bandw_all)) +
@@ -506,10 +511,10 @@ ggsave("figures/compare_bandw_mean.png",
        width = 7, height = 5, dpi = 300)
 
 compare_quart25 <- sq_avgs_all %>%
-  select(midden, quart25_all = quart_25_mean) %>%
+  select(sq_ID, quart25_all = quart_25_mean) %>%
   left_join(
-    sq_avgs_5 %>% select(midden, quart25_5 = quart_25_mean),
-    by = "midden"
+    sq_avgs_5 %>% select(sq_ID, quart25_5 = quart_25_mean),
+    by = "sq_ID"
   )
 p_quart25 <- compare_quart25 %>%
   ggplot(aes(x = quart25_5, y = quart25_all)) +
@@ -527,10 +532,10 @@ ggsave("figures/compare_quart_25_mean.png",
        width = 7, height = 5, dpi = 300)
 
 compare_quart50 <- sq_avgs_all %>%
-  select(midden, quart50_all = quart_50_mean) %>%
+  select(sq_ID, quart50_all = quart_50_mean) %>%
   left_join(
-    sq_avgs_5 %>% select(midden, quart50_5 = quart_50_mean),
-    by = "midden"
+    sq_avgs_5 %>% select(sq_ID, quart50_5 = quart_50_mean),
+    by = "sq_ID"
   )
 p_quart50 <- compare_quart50 %>%
   ggplot(aes(x = quart50_5, y = quart50_all)) +
@@ -548,10 +553,10 @@ ggsave("figures/compare_quart_50_mean.png",
        width = 7, height = 5, dpi = 300)
 
 compare_quart75 <- sq_avgs_all %>%
-  select(midden, quart75_all = quart_75_mean) %>%
+  select(sq_ID, quart75_all = quart_75_mean) %>%
   left_join(
-    sq_avgs_5 %>% select(midden, quart75_5 = quart_75_mean),
-    by = "midden"
+    sq_avgs_5 %>% select(sq_ID, quart75_5 = quart_75_mean),
+    by = "sq_ID"
   )
 p_quart75 <- compare_quart75 %>%
   ggplot(aes(x = quart75_5, y = quart75_all)) +
@@ -572,7 +577,7 @@ ggsave("figures/compare_quart_75_mean.png",
 
 ```
 
-## Visualization
+## Visualization for averages- MG
 
 Create figures for a clear look into data.
 
@@ -580,19 +585,18 @@ Create figures for a clear look into data.
 
 # Just going to look at figs for mt graham squirrels.
 
-# make a table that links each squirrel (midden) to its site (MG)
-sq_site <- sq_data_avgs %>%
-  select(midden, site) %>%
-  distinct()
-
 # add the site  onto the call data, then keep only Mount Graham calls
 call_avgs_mg <- call_avgs %>%
-  left_join(sq_site, by = "midden") %>%
+  left_join(
+    sq_data_avgs %>% distinct(sq_ID, site),
+    by = "sq_ID"
+  ) %>%
   filter(site == "MG")
+
 
 # for MG squirrels, calculate the mean and SD of call_duration across calls
 call_duration_by_sq_mg <- call_avgs_mg %>%
-  group_by(midden) %>%
+  group_by(sq_ID) %>%
   summarise(
     mean_call_duration = mean(call_duration, na.rm = TRUE),
     sd_call_duration = sd(call_duration, na.rm = TRUE)
@@ -600,13 +604,13 @@ call_duration_by_sq_mg <- call_avgs_mg %>%
   ungroup()
 
 p_call_duration_mg <- call_duration_by_sq_mg %>%
-  ggplot(aes(x = reorder(factor(midden), mean_call_duration), y = mean_call_duration)) +
+  ggplot(aes(x = reorder(factor(sq_ID), mean_call_duration), y = mean_call_duration)) +
   geom_pointrange(
     aes(ymin = mean_call_duration - sd_call_duration,
         ymax = mean_call_duration + sd_call_duration),
     na.rm = TRUE
   ) +
-  labs(x = "Mount Graham squirrels (midden)", y = "Call duration: mean ± SD (across calls)") +
+  labs(x = "Mount Graham squirrels (Squirrel ID)", y = "Call duration: mean ± SD (across calls)") +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
 p_call_duration_mg
@@ -617,20 +621,20 @@ ggsave("figures/var_call_duration_MG.png",
 
 #  for MG squirrels, calculate mean and SD of note_rate across calls
 note_rate_mg <- call_avgs_mg %>%
-  group_by(midden) %>%
+  group_by(sq_ID) %>%
   summarise(
     mean_note_rate = mean(note_rate, na.rm = TRUE),
     sd_note_rate = sd(note_rate, na.rm = TRUE)
   ) %>%
   ungroup()
 p_note_rate_mg <- note_rate_mg %>%
-  ggplot(aes(x = reorder(factor(midden), mean_note_rate), y = mean_note_rate)) +
+  ggplot(aes(x = reorder(factor(sq_ID), mean_note_rate), y = mean_note_rate)) +
   geom_pointrange(
     aes(ymin = mean_note_rate - sd_note_rate,
         ymax = mean_note_rate + sd_note_rate),
     na.rm = TRUE
   ) +
-  labs(x = "Mount Graham squirrels (midden)", y = "Note rate: mean ± SD (across calls)") +
+  labs(x = "Mount Graham squirrels (Squirrel ID)", y = "Note rate: mean ± SD (across calls)") +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
 p_note_rate_mg
@@ -641,7 +645,7 @@ ggsave("figures/var_note_rate_MG.png",
 # duration param MG
 # mean + SD of duration for each MG squirrel
 duration_mg <- call_avgs_mg %>%
-  group_by(midden) %>%
+  group_by(sq_ID) %>%
   summarise(
     mean_duration = mean(duration, na.rm = TRUE),
     sd_duration = sd(duration, na.rm = TRUE)
@@ -650,13 +654,13 @@ duration_mg <- call_avgs_mg %>%
 
 # plot mean ± SD
 p_duration_mg <- duration_mg %>%
-  ggplot(aes(x = reorder(factor(midden), mean_duration), y = mean_duration)) +
+  ggplot(aes(x = reorder(factor(sq_ID), mean_duration), y = mean_duration)) +
   geom_pointrange(
     aes(ymin = mean_duration - sd_duration,
         ymax = mean_duration + sd_duration),
     na.rm = TRUE
   ) +
-  labs(x = "Mount Graham squirrels (midden)", y = "Duration: mean ± SD (across calls)") +
+  labs(x = "Mount Graham squirrels (Squirrel ID)", y = "Duration: mean ± SD (across calls)") +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
 p_duration_mg
@@ -668,7 +672,7 @@ ggsave("figures/var_duration_MG.png",
 
 # mean + SD of break_s for each MG squirrel
 break_s_mg <- call_avgs_mg %>%
-  group_by(midden) %>%
+  group_by(sq_ID) %>%
   summarise(
     mean_break_s = mean(break_s, na.rm = TRUE),
     sd_break_s = sd(break_s, na.rm = TRUE)
@@ -677,13 +681,13 @@ break_s_mg <- call_avgs_mg %>%
 
 # plot mean ± SD
 p_break_s_mg <- break_s_mg %>%
-  ggplot(aes(x = reorder(factor(midden), mean_break_s), y = mean_break_s)) +
+  ggplot(aes(x = reorder(factor(sq_ID), mean_break_s), y = mean_break_s)) +
   geom_pointrange(
     aes(ymin = mean_break_s - sd_break_s,
         ymax = mean_break_s + sd_break_s),
     na.rm = TRUE
   ) +
-  labs(x = "Mount Graham squirrels (midden)", y = "break_s: mean ± SD (across calls)") +
+  labs(x = "Mount Graham squirrels (Squirrel ID)", y = "break_s: mean ± SD (across calls)") +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
 p_break_s_mg
@@ -696,7 +700,7 @@ ggsave("figures/var_break_s_MG.png",
 
 # mean + SD of disttomax for each MG squirrel
 disttomax_mg <- call_avgs_mg %>%
-  group_by(midden) %>%
+  group_by(sq_ID) %>%
   summarise(
     mean_disttomax = mean(disttomax, na.rm = TRUE),
     sd_disttomax = sd(disttomax, na.rm = TRUE)
@@ -705,13 +709,13 @@ disttomax_mg <- call_avgs_mg %>%
 
 # plot mean ± SD
 p_disttomax_mg <- disttomax_mg %>%
-  ggplot(aes(x = reorder(factor(midden), mean_disttomax), y = mean_disttomax)) +
+  ggplot(aes(x = reorder(factor(sq_ID), mean_disttomax), y = mean_disttomax)) +
   geom_pointrange(
     aes(ymin = mean_disttomax - sd_disttomax,
         ymax = mean_disttomax + sd_disttomax),
     na.rm = TRUE
   ) +
-  labs(x = "Mount Graham squirrels (midden)", y = "disttomax: mean ± SD (across calls)") +
+  labs(x = "Mount Graham squirrels (Squirrel ID)", y = "disttomax: mean ± SD (across calls)") +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
 p_disttomax_mg
@@ -723,7 +727,7 @@ ggsave("figures/var_disttomax_MG.png",
 
 # mean + SD of rms for each MG squirrel
 rms_mg <- call_avgs_mg %>%
-  group_by(midden) %>%
+  group_by(sq_ID) %>%
   summarise(
     mean_rms = mean(rms, na.rm = TRUE),
     sd_rms = sd(rms, na.rm = TRUE)
@@ -732,13 +736,13 @@ rms_mg <- call_avgs_mg %>%
 
 # plot mean ± SD
 p_rms_mg <- rms_mg %>%
-  ggplot(aes(x = reorder(factor(midden), mean_rms), y = mean_rms)) +
+  ggplot(aes(x = reorder(factor(sq_ID), mean_rms), y = mean_rms)) +
   geom_pointrange(
     aes(ymin = mean_rms - sd_rms,
         ymax = mean_rms + sd_rms),
     na.rm = TRUE
   ) +
-  labs(x = "Mount Graham squirrels (midden)", y = "RMS: mean ± SD (across calls)") +
+  labs(x = "Mount Graham squirrels (Squirrel ID)", y = "RMS: mean ± SD (across calls)") +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
 p_rms_mg
@@ -750,7 +754,7 @@ ggsave("figures/var_rms_MG.png",
 
 # mean + SD of energy for each MG squirrel
 energy_mg <- call_avgs_mg %>%
-  group_by(midden) %>%
+  group_by(sq_ID) %>%
   summarise(
     mean_energy = mean(energy, na.rm = TRUE),
     sd_energy = sd(energy, na.rm = TRUE)
@@ -759,13 +763,13 @@ energy_mg <- call_avgs_mg %>%
 
 # plot mean ± SD
 p_energy_mg <- energy_mg %>%
-  ggplot(aes(x = reorder(factor(midden), mean_energy), y = mean_energy)) +
+  ggplot(aes(x = reorder(factor(sq_ID), mean_energy), y = mean_energy)) +
   geom_pointrange(
     aes(ymin = mean_energy - sd_energy,
         ymax = mean_energy + sd_energy),
     na.rm = TRUE
   ) +
-  labs(x = "Mount Graham squirrels (midden)", y = "Energy: mean ± SD (across calls)") +
+  labs(x = "Mount Graham squirrels (Squirrel ID)", y = "Energy: mean ± SD (across calls)") +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
 p_energy_mg
@@ -777,7 +781,7 @@ ggsave("figures/var_energy_MG.png",
 
 # mean + SD of peaktopeak for each MG squirrel
 peaktopeak_mg <- call_avgs_mg %>%
-  group_by(midden) %>%
+  group_by(sq_ID) %>%
   summarise(
     mean_peaktopeak = mean(peaktopeak, na.rm = TRUE),
     sd_peaktopeak = sd(peaktopeak, na.rm = TRUE)
@@ -786,13 +790,13 @@ peaktopeak_mg <- call_avgs_mg %>%
 
 # plot mean ± SD
 p_peaktopeak_mg <- peaktopeak_mg %>%
-  ggplot(aes(x = reorder(factor(midden), mean_peaktopeak), y = mean_peaktopeak)) +
+  ggplot(aes(x = reorder(factor(sq_ID), mean_peaktopeak), y = mean_peaktopeak)) +
   geom_pointrange(
     aes(ymin = mean_peaktopeak - sd_peaktopeak,
         ymax = mean_peaktopeak + sd_peaktopeak),
     na.rm = TRUE
   ) +
-  labs(x = "Mount Graham squirrels (midden)", y = "Peak-to-peak: mean ± SD (across calls)") +
+  labs(x = "Mount Graham squirrels (Squirrel ID)", y = "Peak-to-peak: mean ± SD (across calls)") +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
 p_peaktopeak_mg
@@ -804,7 +808,7 @@ ggsave("figures/var_peaktopeak_MG.png",
 
 # mean + SD of peak_freq_mean for each MG squirrel
 peak_freq_mg <- call_avgs_mg %>%
-  group_by(midden) %>%
+  group_by(sq_ID) %>%
   summarise(
     mean_peak_freq = mean(peak_freq_mean, na.rm = TRUE),
     sd_peak_freq = sd(peak_freq_mean, na.rm = TRUE)
@@ -813,13 +817,13 @@ peak_freq_mg <- call_avgs_mg %>%
 
 # plot mean ± SD
 p_peak_freq_mg <- peak_freq_mg %>%
-  ggplot(aes(x = reorder(factor(midden), mean_peak_freq), y = mean_peak_freq)) +
+  ggplot(aes(x = reorder(factor(sq_ID), mean_peak_freq), y = mean_peak_freq)) +
   geom_pointrange(
     aes(ymin = mean_peak_freq - sd_peak_freq,
         ymax = mean_peak_freq + sd_peak_freq),
     na.rm = TRUE
   ) +
-  labs(x = "Mount Graham squirrels (midden)", y = "Peak frequency mean: mean ± SD (across calls)") +
+  labs(x = "Mount Graham squirrels (Squirrel ID)", y = "Peak frequency mean: mean ± SD (across calls)") +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
 p_peak_freq_mg
@@ -831,7 +835,7 @@ ggsave("figures/var_peak_freq_mean_MG.png",
 
 # mean + SD of peak_ampl_mean for each MG squirrel
 peak_ampl_mg <- call_avgs_mg %>%
-  group_by(midden) %>%
+  group_by(sq_ID) %>%
   summarise(
     mean_peak_ampl = mean(peak_ampl_mean, na.rm = TRUE),
     sd_peak_ampl = sd(peak_ampl_mean, na.rm = TRUE)
@@ -840,13 +844,13 @@ peak_ampl_mg <- call_avgs_mg %>%
 
 # plot mean ± SD
 p_peak_ampl_mg <- peak_ampl_mg %>%
-  ggplot(aes(x = reorder(factor(midden), mean_peak_ampl), y = mean_peak_ampl)) +
+  ggplot(aes(x = reorder(factor(sq_ID), mean_peak_ampl), y = mean_peak_ampl)) +
   geom_pointrange(
     aes(ymin = mean_peak_ampl - sd_peak_ampl,
         ymax = mean_peak_ampl + sd_peak_ampl),
     na.rm = TRUE
   ) +
-  labs(x = "Mount Graham squirrels (midden)", y = "Peak amplitude mean: mean ± SD (across calls)") +
+  labs(x = "Mount Graham squirrels (Squirrel ID)", y = "Peak amplitude mean: mean ± SD (across calls)") +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
 p_peak_ampl_mg
@@ -858,7 +862,7 @@ ggsave("figures/var_peak_ampl_mean_MG.png",
 
 # mean + SD of min_freq_mean for each MG squirrel
 min_freq_mg <- call_avgs_mg %>%
-  group_by(midden) %>%
+  group_by(sq_ID) %>%
   summarise(
     mean_min_freq = mean(min_freq_mean, na.rm = TRUE),
     sd_min_freq = sd(min_freq_mean, na.rm = TRUE)
@@ -867,13 +871,13 @@ min_freq_mg <- call_avgs_mg %>%
 
 # plot mean ± SD
 p_min_freq_mg <- min_freq_mg %>%
-  ggplot(aes(x = reorder(factor(midden), mean_min_freq), y = mean_min_freq)) +
+  ggplot(aes(x = reorder(factor(sq_ID), mean_min_freq), y = mean_min_freq)) +
   geom_pointrange(
     aes(ymin = mean_min_freq - sd_min_freq,
         ymax = mean_min_freq + sd_min_freq),
     na.rm = TRUE
   ) +
-  labs(x = "Mount Graham squirrels (midden)", y = "Min frequency mean: mean ± SD (across calls)") +
+  labs(x = "Mount Graham squirrels (Squirrel ID)", y = "Min frequency mean: mean ± SD (across calls)") +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
 p_min_freq_mg
@@ -885,7 +889,7 @@ ggsave("figures/var_min_freq_mean_MG.png",
 
 # mean + SD of max_freq_mean for each MG squirrel
 max_freq_mg <- call_avgs_mg %>%
-  group_by(midden) %>%
+  group_by(sq_ID) %>%
   summarise(
     mean_max_freq = mean(max_freq_mean, na.rm = TRUE),
     sd_max_freq = sd(max_freq_mean, na.rm = TRUE)
@@ -894,13 +898,13 @@ max_freq_mg <- call_avgs_mg %>%
 
 # plot mean ± SD
 p_max_freq_mg <- max_freq_mg %>%
-  ggplot(aes(x = reorder(factor(midden), mean_max_freq), y = mean_max_freq)) +
+  ggplot(aes(x = reorder(factor(sq_ID), mean_max_freq), y = mean_max_freq)) +
   geom_pointrange(
     aes(ymin = mean_max_freq - sd_max_freq,
         ymax = mean_max_freq + sd_max_freq),
     na.rm = TRUE
   ) +
-  labs(x = "Mount Graham squirrels (midden)", y = "Max frequency mean: mean ± SD (across calls)") +
+  labs(x = "Mount Graham squirrels (Squirrel ID)", y = "Max frequency mean: mean ± SD (across calls)") +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
 p_max_freq_mg
@@ -912,7 +916,7 @@ ggsave("figures/var_max_freq_mean_MG.png",
 
 # mean + SD of bandw_mean for each MG squirrel
 bandw_mg <- call_avgs_mg %>%
-  group_by(midden) %>%
+  group_by(sq_ID) %>%
   summarise(
     mean_bandw = mean(bandw_mean, na.rm = TRUE),
     sd_bandw = sd(bandw_mean, na.rm = TRUE)
@@ -921,13 +925,13 @@ bandw_mg <- call_avgs_mg %>%
 
 # plot mean ± SD
 p_bandw_mg <- bandw_mg %>%
-  ggplot(aes(x = reorder(factor(midden), mean_bandw), y = mean_bandw)) +
+  ggplot(aes(x = reorder(factor(sq_ID), mean_bandw), y = mean_bandw)) +
   geom_pointrange(
     aes(ymin = mean_bandw - sd_bandw,
         ymax = mean_bandw + sd_bandw),
     na.rm = TRUE
   ) +
-  labs(x = "Mount Graham squirrels (midden)", y = "Bandwidth mean: mean ± SD (across calls)") +
+  labs(x = "Mount Graham squirrels (Squirrel ID)", y = "Bandwidth mean: mean ± SD (across calls)") +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
 p_bandw_mg
@@ -939,7 +943,7 @@ ggsave("figures/var_bandw_mean_MG.png",
 
 # mean + SD of quart_25_mean for each MG squirrel
 quart25_mg <- call_avgs_mg %>%
-  group_by(midden) %>%
+  group_by(sq_ID) %>%
   summarise(
     mean_quart25 = mean(quart_25_mean, na.rm = TRUE),
     sd_quart25 = sd(quart_25_mean, na.rm = TRUE)
@@ -948,13 +952,13 @@ quart25_mg <- call_avgs_mg %>%
 
 # plot mean ± SD
 p_quart25_mg <- quart25_mg %>%
-  ggplot(aes(x = reorder(factor(midden), mean_quart25), y = mean_quart25)) +
+  ggplot(aes(x = reorder(factor(sq_ID), mean_quart25), y = mean_quart25)) +
   geom_pointrange(
     aes(ymin = mean_quart25 - sd_quart25,
         ymax = mean_quart25 + sd_quart25),
     na.rm = TRUE
   ) +
-  labs(x = "Mount Graham squirrels (midden)", y = "Quartile 25% mean: mean ± SD (across calls)") +
+  labs(x = "Mount Graham squirrels (Squirrel ID)", y = "Quartile 25% mean: mean ± SD (across calls)") +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
 p_quart25_mg
@@ -966,7 +970,7 @@ ggsave("figures/var_quart_25_mean_MG.png",
 
 # mean + SD of quart_50_mean for each MG squirrel
 quart50_mg <- call_avgs_mg %>%
-  group_by(midden) %>%
+  group_by(sq_ID) %>%
   summarise(
     mean_quart50 = mean(quart_50_mean, na.rm = TRUE),
     sd_quart50 = sd(quart_50_mean, na.rm = TRUE)
@@ -975,13 +979,13 @@ quart50_mg <- call_avgs_mg %>%
 
 # plot mean ± SD
 p_quart50_mg <- quart50_mg %>%
-  ggplot(aes(x = reorder(factor(midden), mean_quart50), y = mean_quart50)) +
+  ggplot(aes(x = reorder(factor(sq_ID), mean_quart50), y = mean_quart50)) +
   geom_pointrange(
     aes(ymin = mean_quart50 - sd_quart50,
         ymax = mean_quart50 + sd_quart50),
     na.rm = TRUE
   ) +
-  labs(x = "Mount Graham squirrels (midden)", y = "Quartile 50% mean: mean ± SD (across calls)") +
+  labs(x = "Mount Graham squirrels (Squirrel ID)", y = "Quartile 50% mean: mean ± SD (across calls)") +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
 p_quart50_mg
@@ -993,7 +997,7 @@ ggsave("figures/var_quart_50_mean_MG.png",
 
 # mean + SD of quart_75_mean for each MG squirrel
 quart75_mg <- call_avgs_mg %>%
-  group_by(midden) %>%
+  group_by(sq_ID) %>%
   summarise(
     mean_quart75 = mean(quart_75_mean, na.rm = TRUE),
     sd_quart75 = sd(quart_75_mean, na.rm = TRUE)
@@ -1002,13 +1006,13 @@ quart75_mg <- call_avgs_mg %>%
 
 # plot mean ± SD
 p_quart75_mg <- quart75_mg %>%
-  ggplot(aes(x = reorder(factor(midden), mean_quart75), y = mean_quart75)) +
+  ggplot(aes(x = reorder(factor(sq_ID), mean_quart75), y = mean_quart75)) +
   geom_pointrange(
     aes(ymin = mean_quart75 - sd_quart75,
         ymax = mean_quart75 + sd_quart75),
     na.rm = TRUE
   ) +
-  labs(x = "Mount Graham squirrels (midden)", y = "Quartile 75% mean: mean ± SD (across calls)") +
+  labs(x = "Mount Graham squirrels (Squirrel ID)", y = "Quartile 75% mean: mean ± SD (across calls)") +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
 p_quart75_mg
@@ -1020,7 +1024,7 @@ ggsave("figures/var_quart_75_mean_MG.png",
 
 # mean + SD of entropy_mean for each MG squirrel
 entropy_mg <- call_avgs_mg %>%
-  group_by(midden) %>%
+  group_by(sq_ID) %>%
   summarise(
     mean_entropy = mean(entropy_mean, na.rm = TRUE),
     sd_entropy = sd(entropy_mean, na.rm = TRUE)
@@ -1029,13 +1033,13 @@ entropy_mg <- call_avgs_mg %>%
 
 # plot mean ± SD
 p_entropy_mg <- entropy_mg %>%
-  ggplot(aes(x = reorder(factor(midden), mean_entropy), y = mean_entropy)) +
+  ggplot(aes(x = reorder(factor(sq_ID), mean_entropy), y = mean_entropy)) +
   geom_pointrange(
     aes(ymin = mean_entropy - sd_entropy,
         ymax = mean_entropy + sd_entropy),
     na.rm = TRUE
   ) +
-  labs(x = "Mount Graham squirrels (midden)", y = "Entropy mean: mean ± SD (across calls)") +
+  labs(x = "Mount Graham squirrels (Squirrel ID)", y = "Entropy mean: mean ± SD (across calls)") +
   theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
 
 p_entropy_mg
@@ -1046,21 +1050,685 @@ ggsave("figures/var_entropy_mean_MG.png",
        width = 8, height = 5, dpi = 300)
 
 
+# mean + SD of note_rate for each MG squirrel (across calls)
+note_rate_mg <- call_avgs_mg %>%
+  group_by(sq_ID) %>%
+  summarise(
+    mean_note_rate = mean(note_rate, na.rm = TRUE),
+    sd_note_rate = sd(note_rate, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_note_rate_mg <- note_rate_mg %>%
+  ggplot(aes(x = reorder(factor(sq_ID), mean_note_rate), y = mean_note_rate)) +
+  geom_pointrange(
+    aes(ymin = mean_note_rate - sd_note_rate,
+        ymax = mean_note_rate + sd_note_rate),
+    na.rm = TRUE
+  ) +
+  labs(x = "Mount Graham squirrels (Squirrel ID)", y = "Note rate: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_note_rate_mg
+
+# save it
+ggsave("figures/var_note_rate_MG.png",
+       plot = p_note_rate_mg,
+       width = 8, height = 5, dpi = 300)
+
+
+
+
+
 ```
 
-## Stats
-
-Include standard error, significance indicators, and confidence intervals.
+## Visualization for averages-WM
 
 ```{r}
 
+call_avgs_wm <- call_avgs %>%
+  left_join(
+    sq_data_avgs %>% distinct(sq_ID, site),
+    by = "sq_ID"
+  ) %>%
+  filter(site == "WM")
+
+# mean + SD (across calls) for each WM squirrel
+call_duration_wm <- call_avgs_wm %>%
+  group_by(sq_ID) %>%
+  summarise(
+    mean_call_duration = mean(call_duration, na.rm = TRUE),
+    sd_call_duration = sd(call_duration, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_call_duration_wm <- call_duration_wm %>%
+  ggplot(aes(x = reorder(factor(sq_ID), mean_call_duration), y = mean_call_duration)) +
+  geom_pointrange(
+    aes(ymin = mean_call_duration - sd_call_duration,
+        ymax = mean_call_duration + sd_call_duration),
+    na.rm = TRUE
+  ) +
+  labs(x = "White Mountains squirrels (Squirrel ID)", y = "Call duration: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_call_duration_wm
+
+ggsave("figures/var_call_duration_WM.png",
+       plot = p_call_duration_wm,
+       width = 8, height = 5, dpi = 300)
+
+# note rate
+note_rate_wm <- call_avgs_wm %>%
+  group_by(sq_ID) %>%
+  summarise(
+    mean_note_rate = mean(note_rate, na.rm = TRUE),
+    sd_note_rate = sd(note_rate, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+p_note_rate_wm <- note_rate_wm %>%
+  ggplot(aes(x = reorder(factor(sq_ID), mean_note_rate), y = mean_note_rate)) +
+  geom_pointrange(
+    aes(ymin = mean_note_rate - sd_note_rate,
+        ymax = mean_note_rate + sd_note_rate),
+    na.rm = TRUE
+  ) +
+  labs(x = "White Mountains squirrels (Squirrel ID)", y = "Note rate: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_note_rate_wm
+
+ggsave("figures/var_note_rate_WM.png",
+       plot = p_note_rate_wm,
+       width = 8, height = 5, dpi = 300)
+
+# mean + SD (across calls) of duration for each WM squirrel
+duration_wm <- call_avgs_wm %>%
+  group_by(sq_ID) %>%
+  summarise(
+    mean_duration = mean(duration, na.rm = TRUE),
+    sd_duration = sd(duration, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_duration_wm <- duration_wm %>%
+  ggplot(aes(x = reorder(factor(sq_ID), mean_duration), y = mean_duration)) +
+  geom_pointrange(
+    aes(ymin = mean_duration - sd_duration,
+        ymax = mean_duration + sd_duration),
+    na.rm = TRUE
+  ) +
+  labs(x = "White Mountains squirrels (Squirrel ID)", y = "Duration: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_duration_wm
+
+# save it
+ggsave("figures/var_duration_WM.png",
+       plot = p_duration_wm,
+       width = 8, height = 5, dpi = 300)
+
+# mean + SD (across calls) of break_s for each WM squirrel
+break_wm <- call_avgs_wm %>%
+  group_by(sq_ID) %>%
+  summarise(
+    mean_break = mean(break_s, na.rm = TRUE),
+    sd_break = sd(break_s, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_break_wm <- break_wm %>%
+  ggplot(aes(x = reorder(factor(sq_ID), mean_break), y = mean_break)) +
+  geom_pointrange(
+    aes(ymin = mean_break - sd_break,
+        ymax = mean_break + sd_break),
+    na.rm = TRUE
+  ) +
+  labs(x = "White Mountains squirrels (Squirrel ID)", y = "Break_s: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_break_wm
+
+# save it
+ggsave("figures/var_break_s_WM.png",
+       plot = p_break_wm,
+       width = 8, height = 5, dpi = 300)
+
+
+# mean + SD (across calls) of rms for each WM squirrel
+rms_wm <- call_avgs_wm %>%
+  group_by(sq_ID) %>%
+  summarise(
+    mean_rms = mean(rms, na.rm = TRUE),
+    sd_rms = sd(rms, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_rms_wm <- rms_wm %>%
+  ggplot(aes(x = reorder(factor(sq_ID), mean_rms), y = mean_rms)) +
+  geom_pointrange(
+    aes(ymin = mean_rms - sd_rms,
+        ymax = mean_rms + sd_rms),
+    na.rm = TRUE
+  ) +
+  labs(x = "White Mountains squirrels (Squirrel ID)", y = "RMS: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_rms_wm
+
+# save it
+ggsave("figures/var_rms_WM.png",
+       plot = p_rms_wm,
+       width = 8, height = 5, dpi = 300)
+
+# mean + SD (across calls) of energy for each WM squirrel
+energy_wm <- call_avgs_wm %>%
+  group_by(sq_ID) %>%
+  summarise(
+    mean_energy = mean(energy, na.rm = TRUE),
+    sd_energy = sd(energy, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_energy_wm <- energy_wm %>%
+  ggplot(aes(x = reorder(factor(sq_ID), mean_energy), y = mean_energy)) +
+  geom_pointrange(
+    aes(ymin = mean_energy - sd_energy,
+        ymax = mean_energy + sd_energy),
+    na.rm = TRUE
+  ) +
+  labs(x = "White Mountains squirrels (Squirrel ID)", y = "Energy: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_energy_wm
+
+# save it
+ggsave("figures/var_energy_WM.png",
+       plot = p_energy_wm,
+       width = 8, height = 5, dpi = 300)
+
+# mean + SD (across calls) of peaktopeak for each WM squirrel
+peaktopeak_wm <- call_avgs_wm %>%
+  group_by(sq_ID) %>%
+  summarise(
+    mean_peaktopeak = mean(peaktopeak, na.rm = TRUE),
+    sd_peaktopeak = sd(peaktopeak, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_peaktopeak_wm <- peaktopeak_wm %>%
+  ggplot(aes(x = reorder(factor(sq_ID), mean_peaktopeak), y = mean_peaktopeak)) +
+  geom_pointrange(
+    aes(ymin = mean_peaktopeak - sd_peaktopeak,
+        ymax = mean_peaktopeak + sd_peaktopeak),
+    na.rm = TRUE
+  ) +
+  labs(x = "White Mountains squirrels (Squirrel ID)", y = "Peak-to-peak: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_peaktopeak_wm
+
+# save it
+ggsave("figures/var_peaktopeak_WM.png",
+       plot = p_peaktopeak_wm,
+       width = 8, height = 5, dpi = 300)
+
+# mean + SD (across calls) of peak_freq_mean for each WM squirrel
+peak_freq_wm <- call_avgs_wm %>%
+  group_by(sq_ID) %>%
+  summarise(
+    mean_peak_freq = mean(peak_freq_mean, na.rm = TRUE),
+    sd_peak_freq = sd(peak_freq_mean, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_peak_freq_wm <- peak_freq_wm %>%
+  ggplot(aes(x = reorder(factor(sq_ID), mean_peak_freq), y = mean_peak_freq)) +
+  geom_pointrange(
+    aes(ymin = mean_peak_freq - sd_peak_freq,
+        ymax = mean_peak_freq + sd_peak_freq),
+    na.rm = TRUE
+  ) +
+  labs(x = "White Mountains squirrels (Squirrel ID)", y = "Peak frequency mean: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_peak_freq_wm
+
+# save it
+ggsave("figures/var_peak_freq_mean_WM.png",
+       plot = p_peak_freq_wm,
+       width = 8, height = 5, dpi = 300)
+
+# mean + SD (across calls) of peak_ampl_mean for each WM squirrel
+peak_ampl_wm <- call_avgs_wm %>%
+  group_by(sq_ID) %>%
+  summarise(
+    mean_peak_ampl = mean(peak_ampl_mean, na.rm = TRUE),
+    sd_peak_ampl = sd(peak_ampl_mean, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_peak_ampl_wm <- peak_ampl_wm %>%
+  ggplot(aes(x = reorder(factor(sq_ID), mean_peak_ampl), y = mean_peak_ampl)) +
+  geom_pointrange(
+    aes(ymin = mean_peak_ampl - sd_peak_ampl,
+        ymax = mean_peak_ampl + sd_peak_ampl),
+    na.rm = TRUE
+  ) +
+  labs(x = "White Mountains squirrels (Squirrel ID)", y = "Peak amplitude mean: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_peak_ampl_wm
+
+# save it
+ggsave("figures/var_peak_ampl_mean_WM.png",
+       plot = p_peak_ampl_wm,
+       width = 8, height = 5, dpi = 300)
+
+
+# mean + SD (across calls) of min_freq_mean for each WM squirrel
+min_freq_wm <- call_avgs_wm %>%
+  group_by(sq_ID) %>%
+  summarise(
+    mean_min_freq = mean(min_freq_mean, na.rm = TRUE),
+    sd_min_freq = sd(min_freq_mean, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_min_freq_wm <- min_freq_wm %>%
+  ggplot(aes(x = reorder(factor(sq_ID), mean_min_freq), y = mean_min_freq)) +
+  geom_pointrange(
+    aes(ymin = mean_min_freq - sd_min_freq,
+        ymax = mean_min_freq + sd_min_freq),
+    na.rm = TRUE
+  ) +
+  labs(x = "White Mountains squirrels (Squirrel ID)", y = "Min frequency mean: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_min_freq_wm
+
+# save it
+ggsave("figures/var_min_freq_mean_WM.png",
+       plot = p_min_freq_wm,
+       width = 8, height = 5, dpi = 300)
+
+# mean + SD (across calls) of max_freq_mean for each WM squirrel
+max_freq_wm <- call_avgs_wm %>%
+  group_by(sq_ID) %>%
+  summarise(
+    mean_max_freq = mean(max_freq_mean, na.rm = TRUE),
+    sd_max_freq = sd(max_freq_mean, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_max_freq_wm <- max_freq_wm %>%
+  ggplot(aes(x = reorder(factor(sq_ID), mean_max_freq), y = mean_max_freq)) +
+  geom_pointrange(
+    aes(ymin = mean_max_freq - sd_max_freq,
+        ymax = mean_max_freq + sd_max_freq),
+    na.rm = TRUE
+  ) +
+  labs(x = "White Mountains squirrels (Squirrel ID)", y = "Max frequency mean: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_max_freq_wm
+
+# save it
+ggsave("figures/var_max_freq_mean_WM.png",
+       plot = p_max_freq_wm,
+       width = 8, height = 5, dpi = 300)
+
+
+# mean + SD (across calls) of bandw_mean for each WM squirrel
+bandw_wm <- call_avgs_wm %>%
+  group_by(sq_ID) %>%
+  summarise(
+    mean_bandw = mean(bandw_mean, na.rm = TRUE),
+    sd_bandw = sd(bandw_mean, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_bandw_wm <- bandw_wm %>%
+  ggplot(aes(x = reorder(factor(sq_ID), mean_bandw), y = mean_bandw)) +
+  geom_pointrange(
+    aes(ymin = mean_bandw - sd_bandw,
+        ymax = mean_bandw + sd_bandw),
+    na.rm = TRUE
+  ) +
+  labs(x = "White Mountains squirrels (Squirrel ID)", y = "Bandwidth mean: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_bandw_wm
+
+# save it
+ggsave("figures/var_bandw_mean_WM.png",
+       plot = p_bandw_wm,
+       width = 8, height = 5, dpi = 300)
+
+# mean + SD (across calls) of quart_25_mean for each WM squirrel
+quart25_wm <- call_avgs_wm %>%
+  group_by(sq_ID) %>%
+  summarise(
+    mean_quart25 = mean(quart_25_mean, na.rm = TRUE),
+    sd_quart25 = sd(quart_25_mean, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_quart25_wm <- quart25_wm %>%
+  ggplot(aes(x = reorder(factor(sq_ID), mean_quart25), y = mean_quart25)) +
+  geom_pointrange(
+    aes(ymin = mean_quart25 - sd_quart25,
+        ymax = mean_quart25 + sd_quart25),
+    na.rm = TRUE
+  ) +
+  labs(x = "White Mountains squirrels (Squirrel ID)", y = "Quartile 25% mean: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_quart25_wm
+
+# save it
+ggsave("figures/var_quart_25_mean_WM.png",
+       plot = p_quart25_wm,
+       width = 8, height = 5, dpi = 300)
+
+# mean + SD (across calls) of quart_50_mean for each WM squirrel
+quart50_wm <- call_avgs_wm %>%
+  group_by(sq_ID) %>%
+  summarise(
+    mean_quart50 = mean(quart_50_mean, na.rm = TRUE),
+    sd_quart50 = sd(quart_50_mean, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_quart50_wm <- quart50_wm %>%
+  ggplot(aes(x = reorder(factor(sq_ID), mean_quart50), y = mean_quart50)) +
+  geom_pointrange(
+    aes(ymin = mean_quart50 - sd_quart50,
+        ymax = mean_quart50 + sd_quart50),
+    na.rm = TRUE
+  ) +
+  labs(x = "White Mountains squirrels (Squirrel ID)", y = "Quartile 50% mean: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_quart50_wm
+
+# save it
+ggsave("figures/var_quart_50_mean_WM.png",
+       plot = p_quart50_wm,
+       width = 8, height = 5, dpi = 300)
+
+# mean + SD (across calls) of quart_75_mean for each WM squirrel
+quart75_wm <- call_avgs_wm %>%
+  group_by(sq_ID) %>%
+  summarise(
+    mean_quart75 = mean(quart_75_mean, na.rm = TRUE),
+    sd_quart75 = sd(quart_75_mean, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_quart75_wm <- quart75_wm %>%
+  ggplot(aes(x = reorder(factor(sq_ID), mean_quart75), y = mean_quart75)) +
+  geom_pointrange(
+    aes(ymin = mean_quart75 - sd_quart75,
+        ymax = mean_quart75 + sd_quart75),
+    na.rm = TRUE
+  ) +
+  labs(x = "White Mountains squirrels (Squirrel ID)", y = "Quartile 75% mean: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_quart75_wm
+
+# save it
+ggsave("figures/var_quart_75_mean_WM.png",
+       plot = p_quart75_wm,
+       width = 8, height = 5, dpi = 300)
+
+# mean + SD (across calls) of entropy_mean for each WM squirrel
+entropy_wm <- call_avgs_wm %>%
+  group_by(sq_ID) %>%
+  summarise(
+    mean_entropy = mean(entropy_mean, na.rm = TRUE),
+    sd_entropy = sd(entropy_mean, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+# plot mean ± SD
+p_entropy_wm <- entropy_wm %>%
+  ggplot(aes(x = reorder(factor(sq_ID), mean_entropy), y = mean_entropy)) +
+  geom_pointrange(
+    aes(ymin = mean_entropy - sd_entropy,
+        ymax = mean_entropy + sd_entropy),
+    na.rm = TRUE
+  ) +
+  labs(x = "White Mountains squirrels (Squirrel ID)", y = "Entropy mean: mean ± SD (across calls)") +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+
+p_entropy_wm
+
+# save it
+ggsave("figures/var_entropy_mean_WM.png",
+       plot = p_entropy_wm,
+       width = 8, height = 5, dpi = 300)
+
+
 ```
 
-## Population differences
+## Stats mixed model MG
 
-Split MG from WM
+Do mt graham red squirrels have individual distinctiveness in their calls? Do White Mountain squirrels have distiveness in their calls? I will run a one way ANOVA and then control for inflated p-values by running a FDR/BH sensitivity test.
+
+I will also run a mixed model to better explain variation.
 
 ```{r}
+########### Run a mixed model ###############
+
+# Mount Graham call-level data for mixed models
+mg_df <- call_avgs_mg
+
+library(lme4)
+
+# Just doing one parameter to test 'entropy_mean'
+mg_entropy_mod <- lmer(entropy_mean ~ 1 + (1 | sq_ID), data = mg_df)
+summary(mg_entropy_mod)
+
+# compute ICC
+
+mg_entropy_vc <- VarCorr(mg_entropy_mod)
+
+mg_var_sq_ID <- as.numeric(mg_entropy_vc$sq_ID[1])
+mg_var_resid  <- attr(mg_entropy_vc, "sc")^2
+
+mg_icc_entropy <- mg_var_sq_ID / (mg_var_sq_ID + mg_var_resid)
+mg_icc_entropy
+
+# grand means
+
+mg_entropy_effects <- ranef(mg_entropy_mod)$sq_ID[, 1]
+mg_entropy_grand_mean <- fixef(mg_entropy_mod)[1]
+
+mg_entropy_means <- mg_entropy_grand_mean + mg_entropy_effects
+mg_entropy_means
+
+
+# Everything looks good, so I will run all parameters
+
+mg_params <- c(
+  "call_duration",
+  "no_notes",
+  "note_rate",
+  "duration",
+  "break_s",
+  "disttomax",
+  "rms",
+  "energy",
+  "peaktopeak",
+  "peak_freq_mean",
+  "peak_ampl_mean",
+  "min_freq_mean",
+  "max_freq_mean",
+  "bandw_mean",
+  "quart_25_mean",
+  "quart_50_mean",
+  "quart_75_mean",
+  "entropy_mean"
+)
+mg_model_results <- lapply(mg_params, function(param_name) {
+
+  # fit model for one parameter
+  mg_mod <- lmer(
+    as.formula(paste0(param_name, " ~ 1 + (1 | sq_ID)")),
+    data = mg_df
+  )
+
+  # variance components -> ICC
+  vc <- VarCorr(mg_mod)
+  var_sq_ID <- as.numeric(vc$sq_ID[1])
+  var_resid  <- attr(vc, "sc")^2
+  icc_val <- var_sq_ID / (var_sq_ID + var_resid)
+
+  # return a small list
+  list(
+    parameter = param_name,
+    model = mg_mod,
+    var_sq_ID = var_sq_ID,
+    var_resid = var_resid,
+    icc = icc_val
+  )
+})
+mg_icc_results <- tibble(
+  parameter  = sapply(mg_model_results, `[[`, "parameter"),
+  var_sq_ID = sapply(mg_model_results, `[[`, "var_sq_ID"),
+  var_resid  = sapply(mg_model_results, `[[`, "var_resid"),
+  icc        = sapply(mg_model_results, `[[`, "icc")
+) %>%
+  arrange(desc(icc))
+
+mg_icc_results
+
+write.csv(mg_icc_results, "tables/mg_icc_results.csv", row.names = FALSE)
+
+# plot results
+mg_icc_results %>%
+  arrange(icc) %>%
+  ggplot(aes(x = icc, y = reorder(parameter, icc))) +
+  geom_point(na.rm = TRUE) +
+  labs(
+    x = "ICC (proportion of variance among squirrels)",
+    y = "Parameter",
+    title = "Mount Graham: individual distinctiveness by parameter (ICC)"
+  )
+
+
+p_mg_icc <- mg_icc_results %>%
+  arrange(icc) %>%
+  ggplot(aes(x = icc, y = reorder(parameter, icc))) +
+  geom_point(na.rm = TRUE) +
+  labs(
+    x = "ICC (proportion of variance among squirrels)",
+    y = "Parameter",
+    title = "Mount Graham: ICC for each acoustic parameter"
+  )
+
+p_mg_icc
+ggsave("figures/mg_icc_dotplot.png", plot = p_mg_icc, width = 8, height = 5, dpi = 300)
+
+```
+
+## Stats mixed model WM
+
+Run a mixed model for the white mountain squirrels
+
+```{r}
+# White Mountains: mixed models + ICC table + dotplot
+
+#  WM call-level data
+wm_df <- call_avgs_wm
+
+#  Same parameter list
+wm_params <- c(
+  "call_duration",
+  "no_notes",
+  "note_rate",
+  "duration",
+  "break_s",
+  "disttomax",
+  "rms",
+  "energy",
+  "peaktopeak",
+  "peak_freq_mean",
+  "peak_ampl_mean",
+  "min_freq_mean",
+  "max_freq_mean",
+  "bandw_mean",
+  "quart_25_mean",
+  "quart_50_mean",
+  "quart_75_mean",
+  "entropy_mean"
+)
+
+#  Run all WM models + ICC
+wm_model_results <- lapply(wm_params, function(param_name) {
+
+  wm_mod <- lmer(
+    as.formula(paste0(param_name, " ~ 1 + (1 | sq_ID)")),
+    data = wm_df
+  )
+
+  vc <- VarCorr(wm_mod)
+  var_sq_ID <- as.numeric(vc$sq_ID[1])
+  var_resid  <- attr(vc, "sc")^2
+  icc_val <- var_sq_ID / (var_sq_ID + var_resid)
+
+  list(
+    parameter = param_name,
+    model = wm_mod,
+    var_sq_ID = var_sq_ID,
+    var_resid = var_resid,
+    icc = icc_val
+  )
+})
+
+#  WM ICC results table
+wm_icc_results <- tibble(
+  parameter  = sapply(wm_model_results, `[[`, "parameter"),
+  var_sq_ID = sapply(wm_model_results, `[[`, "var_sq_ID"),
+  var_resid  = sapply(wm_model_results, `[[`, "var_resid"),
+  icc        = sapply(wm_model_results, `[[`, "icc")
+) %>%
+  arrange(desc(icc))
+
+wm_icc_results
+write.csv(wm_icc_results, "tables/wm_icc_results.csv", row.names = FALSE)
+
+# WM ICC dot plot
+p_wm_icc <- wm_icc_results %>%
+  arrange(icc) %>%
+  ggplot(aes(x = icc, y = reorder(parameter, icc))) +
+  geom_point(na.rm = TRUE) +
+  labs(
+    x = "ICC (proportion of variance among squirrels)",
+    y = "Parameter",
+    title = "White Mountains: individual distinctiveness by parameter (ICC)"
+  )
+
+p_wm_icc
+ggsave("tables/wm_icc_dotplot.png", plot = p_wm_icc, width = 8, height = 5, dpi = 300)
 
 ```
 
@@ -1070,8 +1738,12 @@ Split MG from WM
 
 ```
 
-## Stats
+## Stats 
 
 ```{r}
 
 ```
+
+## Population differences
+
+Split MG from WM
