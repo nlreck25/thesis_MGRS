@@ -9,12 +9,16 @@ editor: visual
 
 This is my first pass analysis for my data on red squirrel vocal distinctiveness. I will be cleaning the data so that it is compatible with R (renaming columns, and creating new columns). Then I will take averages of each call from each animal, then take averages of all calls per animal. Then I will look at how the two populations may or may not differ.
 
+## Load Data
+
 Load in packages and the data sets I will be using.
 
 ```{r}
 library(tidyverse)
+library(lme4)
+library(effectsize)
 
-sq_data <- read_csv("data_raw/combined_sq_data4.csv")
+  sq_data <- read_csv("data_raw/combined_sq_data5.csv")
 view(sq_data)
 
 detections <- read_csv("data_raw/01jan2026_detections4.csv")
@@ -42,7 +46,7 @@ Taking the averages of each of the calls per animal. Fix any oddities.
 # Call-level averages by sq_ID (one row per call)
 
 call_avgs <- sq_rattle_data %>%
-  group_by(sq_ID, filename) %>%
+  group_by(sq_ID, site, filename) %>%
   summarise(
     no_notes = n(),
     call_duration = first(call_duration),
@@ -71,7 +75,7 @@ call_avgs <- sq_rattle_data %>%
   ungroup()
 call_avgs
 
-
+names(call_avgs)
 ```
 
 ## Squirrel level averages
@@ -82,7 +86,7 @@ Taking the averages of all the calls per animal.
 
 
 sq_avgs <- call_avgs %>%
-  group_by(sq_ID) %>%
+  group_by(sq_ID, site) %>%
   summarise(
     n_calls = n(),
 
@@ -113,7 +117,7 @@ sq_avgs <- call_avgs %>%
   ) %>%
   ungroup()
 sq_avgs
-
+names(sq_avgs)
 
 # worried that sqs with 8 calls vs sqs with 4-5 calls will create bias. Does having extra calls (like 8 instead of 5) change the squirrel’s average? Gonna check differences to see if i need to standardize sqs to 5 calls and eliminate extra calls. I calculated squirrel-level means two ways.first, I used all available calls per squirrel and using the first five calls per squirrel as a sensitivity check.
 
@@ -585,13 +589,10 @@ Create figures for a clear look into data.
 
 # Just going to look at figs for mt graham squirrels.
 
-# add the site  onto the call data, then keep only Mount Graham calls
+# using site, keep only Mount Graham call averages
 call_avgs_mg <- call_avgs %>%
-  left_join(
-    sq_data_avgs %>% distinct(sq_ID, site),
-    by = "sq_ID"
-  ) %>%
   filter(site == "MG")
+
 
 
 # for MG squirrels, calculate the mean and SD of call_duration across calls
@@ -1088,11 +1089,8 @@ ggsave("figures/var_note_rate_MG.png",
 ```{r}
 
 call_avgs_wm <- call_avgs %>%
-  left_join(
-    sq_data_avgs %>% distinct(sq_ID, site),
-    by = "sq_ID"
-  ) %>%
   filter(site == "WM")
+
 
 # mean + SD (across calls) for each WM squirrel
 call_duration_wm <- call_avgs_wm %>%
@@ -1541,7 +1539,7 @@ I will also run a mixed model to better explain variation.
 # Mount Graham call-level data for mixed models
 mg_df <- call_avgs_mg
 
-library(lme4)
+
 
 # Just doing one parameter to test 'entropy_mean'
 mg_entropy_mod <- lmer(entropy_mean ~ 1 + (1 | sq_ID), data = mg_df)
@@ -1568,7 +1566,7 @@ mg_entropy_means
 
 # Everything looks good, so I will run all parameters
 
-mg_params <- c(
+params <- c(
   "call_duration",
   "no_notes",
   "note_rate",
@@ -1588,7 +1586,7 @@ mg_params <- c(
   "quart_75_mean",
   "entropy_mean"
 )
-mg_model_results <- lapply(mg_params, function(param_name) {
+mg_model_results <- lapply(params, function(param_name) {
 
   # fit model for one parameter
   mg_mod <- lmer(
@@ -1660,30 +1658,8 @@ Run a mixed model for the white mountain squirrels
 #  WM call-level data
 wm_df <- call_avgs_wm
 
-#  Same parameter list
-wm_params <- c(
-  "call_duration",
-  "no_notes",
-  "note_rate",
-  "duration",
-  "break_s",
-  "disttomax",
-  "rms",
-  "energy",
-  "peaktopeak",
-  "peak_freq_mean",
-  "peak_ampl_mean",
-  "min_freq_mean",
-  "max_freq_mean",
-  "bandw_mean",
-  "quart_25_mean",
-  "quart_50_mean",
-  "quart_75_mean",
-  "entropy_mean"
-)
-
 #  Run all WM models + ICC
-wm_model_results <- lapply(wm_params, function(param_name) {
+wm_model_results <- lapply(params, function(param_name) {
 
   wm_mod <- lmer(
     as.formula(paste0(param_name, " ~ 1 + (1 | sq_ID)")),
@@ -1728,22 +1704,106 @@ p_wm_icc <- wm_icc_results %>%
   )
 
 p_wm_icc
-ggsave("tables/wm_icc_dotplot.png", plot = p_wm_icc, width = 8, height = 5, dpi = 300)
+ggsave("figures/wm_icc_dotplot.png", plot = p_wm_icc, width = 8, height = 5, dpi = 300)
 
 ```
 
-## Visualization
+## Stats-Grand mean/ SD and PICs
 
 ```{r}
+library(dplyr)
+
+# Output object: PIC summary table
+pic_summary_by_site <- data.frame()
+
+for (current_site in unique(call_avgs$site)) {
+
+  call_avgs_site <- call_avgs %>%
+    filter(site == current_site)
+
+  for (param in params) {
+
+    # Within-individual stats (across calls)
+    ind_stats <- call_avgs_site %>%
+      group_by(sq_ID) %>%
+      summarise(
+        ind_mean = mean(.data[[param]], na.rm = TRUE),
+        ind_sd   = sd(.data[[param]], na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      mutate(
+        CVw = (ind_sd / ind_mean) * 100
+      )
+
+    # Among-individual (grand) stats
+    grand_mean <- mean(ind_stats$ind_mean, na.rm = TRUE)
+    grand_sd   <- sd(ind_stats$ind_mean, na.rm = TRUE)
+    CVa        <- (grand_sd / grand_mean) * 100
+
+    mean_CVw <- mean(ind_stats$CVw, na.rm = TRUE)
+    min_CVw  <- min(ind_stats$CVw, na.rm = TRUE)
+    max_CVw  <- max(ind_stats$CVw, na.rm = TRUE)
+
+    PIC <- CVa / mean_CVw
+
+    # eta^2 (R^2 from one-way ANOVA)
+    model_data <- call_avgs_site %>%
+      select(sq_ID, all_of(param)) %>%
+      filter(!is.na(.data[[param]]))
+
+    eta2 <- summary(lm(aov(model_data[[param]] ~ as.factor(model_data$sq_ID))))$r.squared
+
+    # Append one row to summary table
+    pic_summary_by_site <- rbind(
+      pic_summary_by_site,
+      data.frame(
+        site       = current_site,
+        parameter  = param,
+        grand_mean = grand_mean,
+        grand_sd   = grand_sd,
+        CVa        = CVa,
+        mean_CVw   = mean_CVw,
+        min_CVw    = min_CVw,
+        max_CVw    = max_CVw,
+        PIC        = PIC,
+        eta2       = eta2,
+        n_IDs      = n_distinct(model_data$sq_ID),
+        n_calls    = nrow(model_data)
+      )
+    )
+  }
+}
+
+pic_summary_by_site <- as_tibble(pic_summary_by_site)
+
+pic_summary_by_site
+
+# dropiing the number of calls and sq IDs from the table
+pic_table_1 <- pic_summary_by_site %>%
+  select(-n_IDs, -n_calls)
+pic_table_1
+
+# cleaning up decimals
+pic_table_2 <- pic_table_1 %>%
+  mutate(
+    grand_mean = round(grand_mean, 2),
+    grand_sd   = round(grand_sd, 2),
+    CVa        = round(CVa, 2),
+    mean_CVw   = round(mean_CVw, 2),
+    min_CVw    = round(min_CVw, 2),
+    max_CVw    = round(max_CVw, 2),
+    PIC        = round(PIC, 2),
+    eta2       = round(eta2, 2)
+  )
+pic_table_2
+write_csv(pic_table_2, "tables/pic_table_PIC_combined.csv")
 
 ```
 
-## Stats 
+## PICs-Potential for individual coding
 
 ```{r}
 
 ```
 
 ## Population differences
-
-Split MG from WM
