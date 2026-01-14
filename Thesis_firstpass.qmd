@@ -23,6 +23,8 @@ view(sq_data)
 
 detections <- read_csv("data_raw/01jan2026_detections4.csv")
 
+# create a new column for call number, gsub will cut out the file name so that i just have sq id midden date time.
+
 # Clean break_s: "_" = missing, then make numeric
 detections <- detections %>%
   mutate(
@@ -31,7 +33,12 @@ detections <- detections %>%
     break_s = as.numeric(break_s)
   )
 
-# combine data
+# combine data. Try the merge function merge(x, y, by.x = "whatever column", "column, by .y = specify although x and although y, (It will only merge things that are the same what my columns are)
+
+sq_rattle_data<- merge(detections, sq_data, by.x = "midden", by.y = "midden", all.x = TRUE, all.y = FALSE) %>% 
+  arrange(midden, rattle_no, note_number)
+
+
 sq_rattle_data <- detections %>%
   left_join(sq_data, by = "midden")
 
@@ -1711,7 +1718,6 @@ ggsave("figures/wm_icc_dotplot.png", plot = p_wm_icc, width = 8, height = 5, dpi
 ## Stats-Grand mean/ SD and PICs
 
 ```{r}
-library(dplyr)
 
 # Output object: PIC summary table
 pic_summary_by_site <- data.frame()
@@ -1800,10 +1806,13 @@ write_csv(pic_table_2, "tables/pic_table_PIC_combined.csv")
 
 ```
 
-## PICs-Potential for individual coding
+## Hs (Beechers stat)
+
+Check to see if there is any recording bias by distance. Plot distance = x and parameter = y for every parameter for each population. Then compute Hs beechers stat.
 
 ```{r}
-
+names(call_avgs)
+names(sq_rattle_data)
 ```
 
-## Population differences
+## 
