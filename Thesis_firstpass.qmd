@@ -33,14 +33,16 @@ detections <- detections %>%
     break_s = as.numeric(break_s)
   )
 
+
+# created a unique call id number so that the note number doesnt collapse
+detections$uniqueid <- sub(".*\\\\(.*)\\.wav$", "\\1", detections$filename) 
+
+
 # combine data. Try the merge function merge(x, y, by.x = "whatever column", "column, by .y = specify although x and although y, (It will only merge things that are the same what my columns are)
-
 sq_rattle_data<- merge(detections, sq_data, by.x = "midden", by.y = "midden", all.x = TRUE, all.y = FALSE) %>% 
-  arrange(midden, rattle_no, note_number)
+  arrange(midden, uniqueid, rattle_no, note_number)
 
 
-sq_rattle_data <- detections %>%
-  left_join(sq_data, by = "midden")
 
 ```
 
@@ -83,6 +85,9 @@ call_avgs <- sq_rattle_data %>%
 call_avgs
 
 names(call_avgs)
+
+
+
 ```
 
 ## Squirrel level averages
@@ -1811,8 +1816,100 @@ write_csv(pic_table_2, "tables/pic_table_PIC_combined.csv")
 Check to see if there is any recording bias by distance. Plot distance = x and parameter = y for every parameter for each population. Then compute Hs beechers stat.
 
 ```{r}
-names(call_avgs)
-names(sq_rattle_data)
+# Distance-bias check
+# for each parameter, plot value (y) vs recording distance in meters (x),
+# separately for MG and WM, so you can visually check recording bias.
+
+call_avgs$uniqueid <- sub(".*\\\\(.*)\\.wav$", "\\1", call_avgs$filename)
+
+# distance table (one distance per uniqueid)
+distance_m <- sq_rattle_data %>%
+  distinct(uniqueid, distance)
+
+# merge distance into call_avgs using uniqueid
+call_avgs <- merge(call_avgs, distance_m,
+                   by.x = "uniqueid", by.y = "uniqueid",
+                   all.x = TRUE, all.y = FALSE) %>%
+  arrange(sq_ID, site, uniqueid)
+
+
+
+
+
+# Hs (Beecher's information statistic)
+# calculate Hs (in bits) for each acoustic parameter, separately for MG and WM
+
+# function: compute Beecher's Hs for ONE parameter in MG calls
+calc_Hs_one_parameter_MG <- function(parameter) {
+
+  hs_model_MG <- lme4::lmer(
+    stats::as.formula(paste0(parameter, " ~ 1 + (1 | sq_ID)")),
+    data = call_avgs_mg,
+    REML = TRUE
+  )
+
+  hs_variance_MG <- as.data.frame(lme4::VarCorr(hs_model_MG))
+
+  var_among_squirrels <- hs_variance_MG$vcov[hs_variance_MG$grp == "sq_ID"]
+  var_within_squirrels <- hs_variance_MG$vcov[hs_variance_MG$grp == "Residual"]
+
+  Hs <- log2((var_among_squirrels + var_within_squirrels) / var_within_squirrels)
+
+  tibble::tibble(
+    site = "MG",
+    parameter = parameter,
+    var_among_squirrels = var_among_squirrels,
+    var_within_squirrels = var_within_squirrels,
+    Hs = Hs
+  )
+}
+
+# function: compute Beecher's Hs for ONE parameter in WM calls
+calc_Hs_one_parameter_WM <- function(parameter) {
+
+  hs_model_WM <- lme4::lmer(
+    stats::as.formula(paste0(parameter, " ~ 1 + (1 | sq_ID)")),
+    data = call_avgs_wm,
+    REML = TRUE
+  )
+
+  hs_variance_WM <- as.data.frame(lme4::VarCorr(hs_model_WM))
+
+  var_among_squirrels <- hs_variance_WM$vcov[hs_variance_WM$grp == "sq_ID"]
+  var_within_squirrels <- hs_variance_WM$vcov[hs_variance_WM$grp == "Residual"]
+
+  Hs <- log2((var_among_squirrels + var_within_squirrels) / var_within_squirrels)
+
+  tibble::tibble(
+    site = "WM",
+    parameter = parameter,
+    var_among_squirrels = var_among_squirrels,
+    var_within_squirrels = var_within_squirrels,
+    Hs = Hs
+  )
+}
+
+# run Hs for all parameters (MG)
+Hs_table_MG <- purrr::map_dfr(params, calc_Hs_one_parameter_MG)
+
+# run Hs for all parameters (WM)
+Hs_table_WM <- purrr::map_dfr(params, calc_Hs_one_parameter_WM)
+
+# combine MG + WM into one table
+Hs_table <- bind_rows(Hs_table_MG, Hs_table_WM)
+
+# round for clean reporting
+Hs_table_clean <- Hs_table %>%
+  mutate(
+    Hs = round(Hs, 2),
+    var_among_squirrels = round(var_among_squirrels, 6),
+    var_within_squirrels = round(var_within_squirrels, 6)
+  )
+
+# view final table
+Hs_table_clean
+
+
 ```
 
 ## 
