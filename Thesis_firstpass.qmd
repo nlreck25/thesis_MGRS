@@ -14,35 +14,213 @@ This is my first pass analysis for my data on red squirrel vocal distinctiveness
 Load in packages and the data sets I will be using.
 
 ```{r}
-library(tidyverse)
 library(lme4)
 library(effectsize)
+library(tidyverse)
 
-  sq_data <- read_csv("data_raw/combined_sq_data5.csv")
+
+  sq_data <- read_csv("data_raw/combined_sq_data6.csv")
 view(sq_data)
 
-detections <- read_csv("data_raw/01jan2026_detections4.csv")
+detections <- read_csv("data_raw/31dec2025_detections9.csv")
 
 # create a new column for call number, gsub will cut out the file name so that i just have sq id midden date time.
 
 # Clean break_s: "_" = missing, then make numeric
 detections <- detections %>%
+  rename(break_s = break) %>%
   mutate(
     break_s = as.character(break_s),
-    break_s = na_if(break_s, "_"),
-    break_s = as.numeric(break_s)
+    break_s = na_if(break_s, "")
   )
 
+
+
+
+```
+
+sq_rattle_data %\>%
+
+filter(site == "MG") %\>% \# only Mount Graham data
+
+summarise(
+
+n_squirrels = n_distinct(sq_ID) \# number of unique squirrels
+
+)
+
+```{r}
+
+# load data
+detections <- read_csv("data_raw/31dec2025_detections9.csv")
+combined   <- read_csv("data_raw/combined_sq_data6.csv")
 
 # created a unique call id number so that the note number doesnt collapse
 detections$uniqueid <- sub(".*\\\\(.*)\\.wav$", "\\1", detections$filename) 
 
 
 # combine data. Try the merge function merge(x, y, by.x = "whatever column", "column, by .y = specify although x and although y, (It will only merge things that are the same what my columns are)
-sq_rattle_data<- merge(detections, sq_data, by.x = "midden", by.y = "midden", all.x = TRUE, all.y = FALSE) %>% 
+
+sq_rattle_data<- merge(detections, combined, by.x = "midden", by.y = "midden", all.x = TRUE, all.y = FALSE) %>% 
   arrange(midden, uniqueid, rattle_no, note_number)
 
+# ---- combined: build uniqueid ----
+combined <- combined %>%
+  mutate(
+    # TOD as 4-digit text (works whether TOD is numeric or already "0645")
+    TOD = str_pad(as.character(TOD), width = 4, pad = "0"),
 
+    # parse date no matter whether it's "06/20/25", "06/20/2025", or "06202025"
+    date_parsed = case_when(
+      str_detect(as.character(date), "^\\d{2}/\\d{2}/\\d{2}$") ~ as.Date(as.character(date), format = "%m/%d/%y"),
+      str_detect(as.character(date), "^\\d{2}/\\d{2}/\\d{4}$") ~ as.Date(as.character(date), format = "%m/%d/%Y"),
+      str_detect(as.character(date), "^\\d{8}$")               ~ as.Date(as.character(date), format = "%m%d%Y"),
+      TRUE                                                     ~ NA_Date_
+    ),
+
+    uniqueid = paste0(midden, "_", format(date_parsed, "%m%d%Y"), "_", TOD)
+  )
+
+# ---- detections: extract uniqueid from filename ----
+detections <- detections %>%
+  mutate(
+    uniqueid = filename %>%
+      str_replace("^.*[\\\\/]", "") %>%   # drop any path (works for \ and /)
+      str_remove("\\.wav$") %>%          # drop extension
+      if_else(str_count(., "_") > 2, str_replace(., "^[^_]*_", ""), .)  # drop leading prefix if present
+  )
+
+# ---- merge ----
+sq_rattle_data <- merge(detections, combined, by.x = "uniqueid", by.y = "uniqueid")
+
+
+
+
+#### quick check ssee if all squirrels merged correctly #####
+
+# mt graham squirrels
+
+#  sq data BEFORE i merged data frames
+combined %>%
+  filter(site == "MG") %>%
+  summarise(
+    sq_IDs = list(sort(unique(sq_ID)))
+  )
+# 19 sqs
+
+# sq data AFTER I merge data frames
+sq_rattle_data %>%
+  filter(site == "MG") %>%
+  summarise(
+    sq_IDs = list(sort(unique(sq_ID)))
+  )
+# 19sqs
+
+
+################
+
+# White mountain squirrels
+
+#  sq data BEOFRE i merged data frames
+combined %>%
+  filter(site == "WM") %>%
+  summarise(
+    sq_IDs = list(sort(unique(sq_ID)))
+  )
+# 21 sqs
+
+
+
+# sq data AFTER I merge data frames
+sq_rattle_data %>%
+  filter(site == "WM") %>%
+  summarise(
+    sq_IDs = list(sort(unique(sq_ID)))
+  )
+# 21 sqs
+
+```
+
+## Distance bias check on parameters
+
+```{r}
+
+# Calculate note rate
+sq_rattle_data <- sq_rattle_data %>%
+  group_by(uniqueid, rattle_no) %>% 
+  mutate(
+    note_rate = n() / first(call_duration)
+  ) %>%
+  ungroup()
+
+
+params <- c(
+  "call_duration",
+  "note_number",
+  "note_rate",
+  "duration",
+  "break_s",
+  "disttomax",
+  "rms",
+  "energy",
+  "peaktopeak",
+  "peak_freq_mean",
+  "peak_ampl_mean",
+  "min_freq_mean",
+  "max_freq_mean",
+  "bandw_mean",
+  "quart_25_mean",
+  "quart_50_mean",
+  "quart_75_mean",
+  "entropy_mean"
+)
+
+
+dir.create("figures/distance_bias", recursive = TRUE, showWarnings = FALSE)
+
+for (p in params) {
+
+  g <- ggplot(
+    sq_rattle_data,
+    aes(x = distance, y = .data[[p]], color = site)
+  ) +
+    geom_point(na.rm = TRUE, alpha = 0.7) +
+    geom_smooth(
+      method = "lm",
+      se = FALSE,
+      na.rm = TRUE
+    ) +
+    scale_color_manual(
+      values = c(
+        "Mount Graham" = "#009E73",   # bluish-green
+        "White Mountains" = "#CC79A7" # purple
+      )
+    ) +
+    labs(
+      title = paste("Distance bias check:", p),
+      x = "Distance recorded (m)",
+      y = p,
+      color = "Population"
+    ) +
+    theme_bw() +
+    theme(
+      plot.title = element_text(face = "bold"),
+      axis.title = element_text(size = 12),
+      axis.text = element_text(size = 10),
+      legend.position = "top"
+    )
+
+  ggsave(
+    filename = file.path(
+      "figures/distance_bias",
+      paste0("distance_bias_", p, ".png")
+    ),
+    plot = g,
+    width = 7,
+    height = 5,
+    dpi = 300
+  )
+}
 
 ```
 
@@ -131,465 +309,14 @@ sq_avgs <- call_avgs %>%
 sq_avgs
 names(sq_avgs)
 
-# worried that sqs with 8 calls vs sqs with 4-5 calls will create bias. Does having extra calls (like 8 instead of 5) change the squirrel’s average? Gonna check differences to see if i need to standardize sqs to 5 calls and eliminate extra calls. I calculated squirrel-level means two ways.first, I used all available calls per squirrel and using the first five calls per squirrel as a sensitivity check.
 
-# all calls
-sq_avgs_all <- call_avgs %>%
-  group_by(sq_ID) %>%
-  summarise(
-    n_calls = n(),
 
-    call_duration = mean(call_duration, na.rm = TRUE),
-    no_notes     = mean(no_notes, na.rm = TRUE),
-    note_rate    = mean(note_rate, na.rm = TRUE),
+```
 
-    duration     = mean(duration, na.rm = TRUE),
-    break_s      = mean(break_s, na.rm = TRUE),
-    disttomax    = mean(disttomax, na.rm = TRUE),
+## 
 
-    rms          = mean(rms, na.rm = TRUE),
-    energy       = mean(energy, na.rm = TRUE),
-    peaktopeak   = mean(peaktopeak, na.rm = TRUE),
+```{r}
 
-    peak_freq_mean  = mean(peak_freq_mean, na.rm = TRUE),
-    peak_ampl_mean  = mean(peak_ampl_mean, na.rm = TRUE),
-    min_freq_mean   = mean(min_freq_mean, na.rm = TRUE),
-    max_freq_mean   = mean(max_freq_mean, na.rm = TRUE),
-    bandw_mean      = mean(bandw_mean, na.rm = TRUE),
-
-    quart_25_mean = mean(quart_25_mean, na.rm = TRUE),
-    quart_50_mean = mean(quart_50_mean, na.rm = TRUE),
-    quart_75_mean = mean(quart_75_mean, na.rm = TRUE),
-
-    entropy_mean  = mean(entropy_mean, na.rm = TRUE)
-  ) %>%
-  ungroup()
-
-
-# first 5 calls per squirrel
-sq_avgs_5 <- call_avgs %>%
-  group_by(sq_ID) %>%
-  slice_head(n = 5) %>%
-  summarise(
-    n_calls = n(),
-
-    call_duration = mean(call_duration, na.rm = TRUE),
-    no_notes     = mean(no_notes, na.rm = TRUE),
-    note_rate    = mean(note_rate, na.rm = TRUE),
-
-    duration     = mean(duration, na.rm = TRUE),
-    break_s      = mean(break_s, na.rm = TRUE),
-    disttomax    = mean(disttomax, na.rm = TRUE),
-
-    rms          = mean(rms, na.rm = TRUE),
-    energy       = mean(energy, na.rm = TRUE),
-    peaktopeak   = mean(peaktopeak, na.rm = TRUE),
-
-    peak_freq_mean  = mean(peak_freq_mean, na.rm = TRUE),
-    peak_ampl_mean  = mean(peak_ampl_mean, na.rm = TRUE),
-    min_freq_mean   = mean(min_freq_mean, na.rm = TRUE),
-    max_freq_mean   = mean(max_freq_mean, na.rm = TRUE),
-    bandw_mean      = mean(bandw_mean, na.rm = TRUE),
-
-    quart_25_mean = mean(quart_25_mean, na.rm = TRUE),
-    quart_50_mean = mean(quart_50_mean, na.rm = TRUE),
-    quart_75_mean = mean(quart_75_mean, na.rm = TRUE),
-
-    entropy_mean  = mean(entropy_mean, na.rm = TRUE)
-  ) %>%
-  ungroup()
-
-# compare parameters
-compare_entropy <- sq_avgs_all %>%
-  select(sq_ID, entropy_all = entropy_mean) %>%
-  left_join(
-    sq_avgs_5 %>% select(sq_ID, entropy_5 = entropy_mean),
-    by = "sq_ID"
-  )
-
-p_entropy <- compare_entropy %>%
-  ggplot(aes(x = entropy_5, y = entropy_all)) +
-  geom_point(na.rm = TRUE) +
-  geom_abline() +
-  labs(
-    x = "Entropy mean (first 5 calls)",
-    y = "Entropy mean (all calls)"
-  )
-
-p_entropy
-
-ggsave("figures/compare_entropy.png", plot = p_entropy, width = 7, height = 5, dpi = 300)
-
-compare_call_duration <- sq_avgs_all %>%
-  select(sq_ID, call_duration_all = call_duration) %>%
-  left_join(
-    sq_avgs_5 %>% select(sq_ID, call_duration_5 = call_duration),
-    by = "sq_ID"
-  )
-p_call_duration <- compare_call_duration %>%
-  ggplot(aes(x = call_duration_5, y = call_duration_all)) +
-  geom_point(na.rm = TRUE) +
-  geom_abline() +
-  labs(
-    x = "Call duration mean (first 5 calls)",
-    y = "Call duration mean (all calls)"
-  )
-
-p_call_duration
-
-ggsave("figures/compare_call_duration.png",
-       plot = p_call_duration,
-       width = 7, height = 5, dpi = 300)
-
-compare_no_notes <- sq_avgs_all %>%
-  select(sq_ID, no_notes_all = no_notes) %>%
-  left_join(
-    sq_avgs_5 %>% select(sq_ID, no_notes_5 = no_notes),
-    by = "sq_ID"
-  )
-
-p_no_notes <- compare_no_notes %>%
-  ggplot(aes(x = no_notes_5, y = no_notes_all)) +
-  geom_point(na.rm = TRUE) +
-  geom_abline() +
-  labs(
-    x = "Mean no. notes (first 5 calls)",
-    y = "Mean no. notes (all calls)"
-  )
-
-p_no_notes
-
-ggsave("figures/compare_no_notes.png",
-       plot = p_no_notes,
-       width = 7, height = 5, dpi = 300)
-
-compare_note_rate <- sq_avgs_all %>%
-  select(sq_ID, note_rate_all = note_rate) %>%
-  left_join(
-    sq_avgs_5 %>% select(sq_ID, note_rate_5 = note_rate),
-    by = "sq_ID"
-  )
-
-p_note_rate <- compare_note_rate %>%
-  ggplot(aes(x = note_rate_5, y = note_rate_all)) +
-  geom_point(na.rm = TRUE) +
-  geom_abline() +
-  labs(
-    x = "Note rate mean (first 5 calls)",
-    y = "Note rate mean (all calls)"
-  )
-
-p_note_rate
-
-ggsave("figures/compare_note_rate.png",
-       plot = p_note_rate,
-       width = 7, height = 5, dpi = 300)
-
-
-compare_duration <- sq_avgs_all %>%
-  select(sq_ID, duration_all = duration) %>%
-  left_join(
-    sq_avgs_5 %>% select(sq_ID, duration_5 = duration),
-    by = "sq_ID"
-  )
-
-p_duration <- compare_duration %>%
-  ggplot(aes(x = duration_5, y = duration_all)) +
-  geom_point(na.rm = TRUE) +
-  geom_abline() +
-  labs(
-    x = "Mean note duration (first 5 calls)",
-    y = "Mean note duration (all calls)"
-  )
-
-p_duration
-
-ggsave("figures/compare_duration.png",
-       plot = p_duration,
-       width = 7, height = 5, dpi = 300)
-
-
-compare_break_s <- sq_avgs_all %>%
-  select(sq_ID, break_s_all = break_s) %>%
-  left_join(
-    sq_avgs_5 %>% select(sq_ID, break_s_5 = break_s),
-    by = "sq_ID"
-  )
-
-p_break_s <- compare_break_s %>%
-  ggplot(aes(x = break_s_5, y = break_s_all)) +
-  geom_point(na.rm = TRUE) +
-  geom_abline() +
-  labs(
-    x = "Mean break_s (first 5 calls)",
-    y = "Mean break_s (all calls)"
-  )
-
-p_break_s
-
-ggsave("figures/compare_break_s.png",
-       plot = p_break_s,
-       width = 7, height = 5, dpi = 300)
-
-compare_disttomax <- sq_avgs_all %>%
-  select(sq_ID, disttomax_all = disttomax) %>%
-  left_join(
-    sq_avgs_5 %>% select(sq_ID, disttomax_5 = disttomax),
-    by = "sq_ID"
-  )
-
-p_disttomax <- compare_disttomax %>%
-  ggplot(aes(x = disttomax_5, y = disttomax_all)) +
-  geom_point(na.rm = TRUE) +
-  geom_abline() +
-  labs(
-    x = "Mean disttomax (first 5 calls)",
-    y = "Mean disttomax (all calls)"
-  )
-
-p_disttomax
-
-ggsave("figures/compare_disttomax.png",
-       plot = p_disttomax,
-       width = 7, height = 5, dpi = 300)
-
-compare_rms <- sq_avgs_all %>%
-  select(sq_ID, rms_all = rms) %>%
-  left_join(
-    sq_avgs_5 %>% select(sq_ID, rms_5 = rms),
-    by = "sq_ID"
-  )
-
-p_rms <- compare_rms %>%
-  ggplot(aes(x = rms_5, y = rms_all)) +
-  geom_point(na.rm = TRUE) +
-  geom_abline() +
-  labs(
-    x = "Mean RMS (first 5 calls)",
-    y = "Mean RMS (all calls)"
-  )
-
-p_rms
-
-ggsave("figures/compare_rms.png",
-       plot = p_rms,
-       width = 7, height = 5, dpi = 300)
-
-compare_energy <- sq_avgs_all %>%
-  select(sq_ID, energy_all = energy) %>%
-  left_join(
-    sq_avgs_5 %>% select(sq_ID, energy_5 = energy),
-    by = "sq_ID"
-  )
-
-p_energy <- compare_energy %>%
-  ggplot(aes(x = energy_5, y = energy_all)) +
-  geom_point(na.rm = TRUE) +
-  geom_abline() +
-  labs(
-    x = "Mean energy (first 5 calls)",
-    y = "Mean energy (all calls)"
-  )
-
-p_energy
-
-ggsave("figures/compare_energy.png",
-       plot = p_energy,
-       width = 7, height = 5, dpi = 300)
-
-compare_peaktopeak <- sq_avgs_all %>%
-  select(sq_ID, peaktopeak_all = peaktopeak) %>%
-  left_join(
-    sq_avgs_5 %>% select(sq_ID, peaktopeak_5 = peaktopeak),
-    by = "sq_ID"
-  )
-p_peaktopeak <- compare_peaktopeak %>%
-  ggplot(aes(x = peaktopeak_5, y = peaktopeak_all)) +
-  geom_point(na.rm = TRUE) +
-  geom_abline() +
-  labs(
-    x = "Mean peak-to-peak (first 5 calls)",
-    y = "Mean peak-to-peak (all calls)"
-  )
-
-p_peaktopeak
-
-ggsave("figures/compare_peaktopeak.png",
-       plot = p_peaktopeak,
-       width = 7, height = 5, dpi = 300)
-
-compare_peak_freq <- sq_avgs_all %>%
-  select(sq_ID, peak_freq_all = peak_freq_mean) %>%
-  left_join(
-    sq_avgs_5 %>% select(sq_ID, peak_freq_5 = peak_freq_mean),
-    by = "sq_ID"
-  )
-
-p_peak_freq <- compare_peak_freq %>%
-  ggplot(aes(x = peak_freq_5, y = peak_freq_all)) +
-  geom_point(na.rm = TRUE) +
-  geom_abline() +
-  labs(
-    x = "Peak frequency mean (first 5 calls)",
-    y = "Peak frequency mean (all calls)"
-  )
-
-p_peak_freq
-
-ggsave("figures/compare_peak_freq_mean.png",
-       plot = p_peak_freq,
-       width = 7, height = 5, dpi = 300)
-
-compare_peak_ampl <- sq_avgs_all %>%
-  select(sq_ID, peak_ampl_all = peak_ampl_mean) %>%
-  left_join(
-    sq_avgs_5 %>% select(sq_ID, peak_ampl_5 = peak_ampl_mean),
-    by = "sq_ID"
-  )
-
-p_peak_ampl <- compare_peak_ampl %>%
-  ggplot(aes(x = peak_ampl_5, y = peak_ampl_all)) +
-  geom_point(na.rm = TRUE) +
-  geom_abline() +
-  labs(
-    x = "Peak amplitude mean (first 5 calls)",
-    y = "Peak amplitude mean (all calls)"
-  )
-
-p_peak_ampl
-
-ggsave("figures/compare_peak_ampl_mean.png",
-       plot = p_peak_ampl,
-       width = 7, height = 5, dpi = 300)
-
-compare_min_freq <- sq_avgs_all %>%
-  select(sq_ID, min_freq_all = min_freq_mean) %>%
-  left_join(
-    sq_avgs_5 %>% select(sq_ID, min_freq_5 = min_freq_mean),
-    by = "sq_ID"
-  )
-p_min_freq <- compare_min_freq %>%
-  ggplot(aes(x = min_freq_5, y = min_freq_all)) +
-  geom_point(na.rm = TRUE) +
-  geom_abline() +
-  labs(
-    x = "Min frequency mean (first 5 calls)",
-    y = "Min frequency mean (all calls)"
-  )
-
-p_min_freq
-
-ggsave("figures/compare_min_freq_mean.png",
-       plot = p_min_freq,
-       width = 7, height = 5, dpi = 300)
-
-compare_max_freq <- sq_avgs_all %>%
-  select(sq_ID, max_freq_all = max_freq_mean) %>%
-  left_join(
-    sq_avgs_5 %>% select(sq_ID, max_freq_5 = max_freq_mean),
-    by = "sq_ID"
-  )
-
-p_max_freq <- compare_max_freq %>%
-  ggplot(aes(x = max_freq_5, y = max_freq_all)) +
-  geom_point(na.rm = TRUE) +
-  geom_abline() +
-  labs(
-    x = "Max frequency mean (first 5 calls)",
-    y = "Max frequency mean (all calls)"
-  )
-
-p_max_freq
-
-ggsave("figures/compare_max_freq_mean.png",
-       plot = p_max_freq,
-       width = 7, height = 5, dpi = 300)
-
-compare_bandw <- sq_avgs_all %>%
-  select(sq_ID, bandw_all = bandw_mean) %>%
-  left_join(
-    sq_avgs_5 %>% select(sq_ID, bandw_5 = bandw_mean),
-    by = "sq_ID"
-  )
-p_bandw <- compare_bandw %>%
-  ggplot(aes(x = bandw_5, y = bandw_all)) +
-  geom_point(na.rm = TRUE) +
-  geom_abline() +
-  labs(
-    x = "Bandwidth mean (first 5 calls)",
-    y = "Bandwidth mean (all calls)"
-  )
-
-p_bandw
-
-ggsave("figures/compare_bandw_mean.png",
-       plot = p_bandw,
-       width = 7, height = 5, dpi = 300)
-
-compare_quart25 <- sq_avgs_all %>%
-  select(sq_ID, quart25_all = quart_25_mean) %>%
-  left_join(
-    sq_avgs_5 %>% select(sq_ID, quart25_5 = quart_25_mean),
-    by = "sq_ID"
-  )
-p_quart25 <- compare_quart25 %>%
-  ggplot(aes(x = quart25_5, y = quart25_all)) +
-  geom_point(na.rm = TRUE) +
-  geom_abline() +
-  labs(
-    x = "Quartile 25% mean (first 5 calls)",
-    y = "Quartile 25% mean (all calls)"
-  )
-
-p_quart25
-
-ggsave("figures/compare_quart_25_mean.png",
-       plot = p_quart25,
-       width = 7, height = 5, dpi = 300)
-
-compare_quart50 <- sq_avgs_all %>%
-  select(sq_ID, quart50_all = quart_50_mean) %>%
-  left_join(
-    sq_avgs_5 %>% select(sq_ID, quart50_5 = quart_50_mean),
-    by = "sq_ID"
-  )
-p_quart50 <- compare_quart50 %>%
-  ggplot(aes(x = quart50_5, y = quart50_all)) +
-  geom_point(na.rm = TRUE) +
-  geom_abline() +
-  labs(
-    x = "Quartile 50% mean (first 5 calls)",
-    y = "Quartile 50% mean (all calls)"
-  )
-
-p_quart50
-
-ggsave("figures/compare_quart_50_mean.png",
-       plot = p_quart50,
-       width = 7, height = 5, dpi = 300)
-
-compare_quart75 <- sq_avgs_all %>%
-  select(sq_ID, quart75_all = quart_75_mean) %>%
-  left_join(
-    sq_avgs_5 %>% select(sq_ID, quart75_5 = quart_75_mean),
-    by = "sq_ID"
-  )
-p_quart75 <- compare_quart75 %>%
-  ggplot(aes(x = quart75_5, y = quart75_all)) +
-  geom_point(na.rm = TRUE) +
-  geom_abline() +
-  labs(
-    x = "Quartile 75% mean (first 5 calls)",
-    y = "Quartile 75% mean (all calls)"
-  )
-
-p_quart75
-
-ggsave("figures/compare_quart_75_mean.png",
-       plot = p_quart75,
-       width = 7, height = 5, dpi = 300)
-
-# All parameters look pretty good. Going to keep all calls
 
 ```
 
@@ -1539,7 +1266,7 @@ ggsave("figures/var_entropy_mean_WM.png",
 
 ```
 
-## Stats mixed model MG
+## ICC MG
 
 Do mt graham red squirrels have individual distinctiveness in their calls? Do White Mountain squirrels have distiveness in their calls? I will run a one way ANOVA and then control for inflated p-values by running a FDR/BH sensitivity test.
 
@@ -1578,26 +1305,7 @@ mg_entropy_means
 
 # Everything looks good, so I will run all parameters
 
-params <- c(
-  "call_duration",
-  "no_notes",
-  "note_rate",
-  "duration",
-  "break_s",
-  "disttomax",
-  "rms",
-  "energy",
-  "peaktopeak",
-  "peak_freq_mean",
-  "peak_ampl_mean",
-  "min_freq_mean",
-  "max_freq_mean",
-  "bandw_mean",
-  "quart_25_mean",
-  "quart_50_mean",
-  "quart_75_mean",
-  "entropy_mean"
-)
+
 mg_model_results <- lapply(params, function(param_name) {
 
   # fit model for one parameter
@@ -1660,7 +1368,7 @@ ggsave("figures/mg_icc_dotplot.png", plot = p_mg_icc, width = 8, height = 5, dpi
 
 ```
 
-## Stats mixed model WM
+## ICC WM
 
 Run a mixed model for the white mountain squirrels
 
@@ -1720,7 +1428,84 @@ ggsave("figures/wm_icc_dotplot.png", plot = p_wm_icc, width = 8, height = 5, dpi
 
 ```
 
+```{r}
+# add site labels to each ICC table
+wm_icc_results <- wm_icc_results %>%
+  mutate(site = "White Mountains")
+
+mg_icc_results <- mg_icc_results %>%
+  mutate(site = "Mount Graham")
+
+# combine for plotting
+icc_results_both <- bind_rows(wm_icc_results, mg_icc_results)
+
+# facet plot: keeps site-specific ordering without "combining" in reorder()
+p_icc_facet <- icc_results_both %>%
+  mutate(param_site = paste(parameter, site, sep = "___")) %>%
+  ggplot(aes(x = icc, y = reorder(param_site, icc))) +
+  geom_point(size = 3, na.rm = TRUE) +
+  facet_wrap(~ site, scales = "free_y") +
+  scale_y_discrete(labels = function(x) sub("___.*$", "", x)) +
+  labs(
+    x = "ICC (proportion of variance among squirrels)",
+    y = "Parameter",
+    title = "Individual distinctiveness by parameter (ICC)"
+  ) +
+  theme_classic() +
+  theme(
+    plot.title  = element_text(size = 18, face = "bold"),
+    strip.text  = element_text(size = 16, face = "bold"),
+    axis.title.x = element_text(size = 15),
+    axis.title.y = element_text(size = 15)
+  )
+
+p_icc_facet
+
+
+ggsave(
+  filename = "figures/icc_facet_sites.png",
+  plot = p_icc_facet,
+  width = 11,
+  height = 7,
+  dpi = 300
+)
+
+
+```
+
+## Sq variation catepillar plot
+
+```{r}
+
+```
+
 ## Stats-Grand mean/ SD and PICs
+
+tt \<- gridExtra::ttheme_default(base_size = 10)
+
+pic_mg \<- pic_table_2 %\>%
+
+filter(site == "Mount Graham") %\>%
+
+select(parameter, CVa, mean_CVw, PIC, eta2) %\>%
+
+rename(\`Call property\` = parameter)
+
+pic_wm \<- pic_table_2 %\>%
+
+filter(site == "White Mountains") %\>%
+
+select(parameter, CVa, mean_CVw, PIC, eta2) %\>%
+
+rename(\`Call property\` = parameter)
+
+png("figures/pic_table_mg.png", width = 1200, height = 700, res = 200)
+
+gridExtra::grid.table(pic_mg, theme = tt); dev.off()
+
+png("figures/pic_table_wm.png", width = 1200, height = 700, res = 200)
+
+gridExtra::grid.table(pic_wm, theme = tt); dev.off()
 
 ```{r}
 
@@ -1787,12 +1572,9 @@ for (current_site in unique(call_avgs$site)) {
 
 pic_summary_by_site <- as_tibble(pic_summary_by_site)
 
-pic_summary_by_site
-
 # dropiing the number of calls and sq IDs from the table
 pic_table_1 <- pic_summary_by_site %>%
   select(-n_IDs, -n_calls)
-pic_table_1
 
 # cleaning up decimals
 pic_table_2 <- pic_table_1 %>%
@@ -1804,10 +1586,79 @@ pic_table_2 <- pic_table_1 %>%
     min_CVw    = round(min_CVw, 2),
     max_CVw    = round(max_CVw, 2),
     PIC        = round(PIC, 2),
-    eta2       = round(eta2, 2)
+    eta2       = round(eta2, 2),
+
+    # relabel sites (WM/MG -> full names)
+    site = case_when(
+      site == "WM" ~ "White Mountains",
+      site == "MG" ~ "Mount Graham",
+      TRUE ~ site
+    )
   )
+
 pic_table_2
+
 write_csv(pic_table_2, "tables/pic_table_PIC_combined.csv")
+
+
+library(gridExtra)
+library(grid)
+library(gridExtra)
+
+# bigger table text
+tt <- gridExtra::ttheme_default(base_size = 22)
+
+pic_mg <- pic_table_2 %>%
+  filter(site == "Mount Graham") %>%
+  select(parameter, CVa, mean_CVw, PIC, eta2) %>%
+  mutate(parameter = gsub("_", " ", parameter)) %>%
+  rename(`Call property` = parameter)
+
+title_mg <- grid::textGrob(
+  "Mount Graham Red Squirrels: PIC Summary by Acoustic Parameter",
+  gp = grid::gpar(fontsize = 19, fontface = "bold")
+)
+
+table_mg <- gridExtra::tableGrob(pic_mg, rows = NULL, theme = tt)
+
+pdf("figures/pic_table_mount_graham.pdf", width = 8.5, height = 11)
+grid::grid.newpage()
+grid::grid.draw(
+  gridExtra::arrangeGrob(
+    title_mg, table_mg,
+    ncol = 1,
+    heights = c(0.3, 10.7)   # smaller title row = less whitespace
+  )
+)
+dev.off()
+
+
+
+tt <- gridExtra::ttheme_default(base_size = 22)
+
+pic_wm <- pic_table_2 %>%
+  filter(site == "White Mountains") %>%
+  select(parameter, CVa, mean_CVw, PIC, eta2) %>%
+  mutate(parameter = gsub("_", " ", parameter)) %>%
+  rename(`Call property` = parameter)
+
+title_wm <- grid::textGrob(
+  "White Mountains Red Squirrels: PIC Summary by Acoustic Parameter",
+  gp = grid::gpar(fontsize = 16, fontface = "bold")
+)
+
+table_wm <- gridExtra::tableGrob(pic_wm, rows = NULL, theme = tt)
+
+pdf("figures/pic_table_white_mountains.pdf", width = 8.5, height = 11)
+grid::grid.newpage()
+grid::grid.draw(
+  gridExtra::arrangeGrob(
+    title_wm, table_wm,
+    ncol = 1,
+    heights = c(0.3, 10.7)
+  )
+)
+dev.off()
 
 ```
 
@@ -1816,26 +1667,6 @@ write_csv(pic_table_2, "tables/pic_table_PIC_combined.csv")
 Check to see if there is any recording bias by distance. Plot distance = x and parameter = y for every parameter for each population. Then compute Hs beechers stat.
 
 ```{r}
-# Distance-bias check
-# for each parameter, plot value (y) vs recording distance in meters (x),
-# separately for MG and WM, so you can visually check recording bias.
-
-call_avgs$uniqueid <- sub(".*\\\\(.*)\\.wav$", "\\1", call_avgs$filename)
-
-# distance table (one distance per uniqueid)
-distance_m <- sq_rattle_data %>%
-  distinct(uniqueid, distance)
-
-# merge distance into call_avgs using uniqueid
-call_avgs <- merge(call_avgs, distance_m,
-                   by.x = "uniqueid", by.y = "uniqueid",
-                   all.x = TRUE, all.y = FALSE) %>%
-  arrange(sq_ID, site, uniqueid)
-
-
-
-
-
 # Hs (Beecher's information statistic)
 # calculate Hs (in bits) for each acoustic parameter, separately for MG and WM
 
@@ -1898,7 +1729,7 @@ Hs_table_WM <- purrr::map_dfr(params, calc_Hs_one_parameter_WM)
 # combine MG + WM into one table
 Hs_table <- bind_rows(Hs_table_MG, Hs_table_WM)
 
-# round for clean reporting
+# round 2 decimals
 Hs_table_clean <- Hs_table %>%
   mutate(
     Hs = round(Hs, 2),
@@ -1908,8 +1739,157 @@ Hs_table_clean <- Hs_table %>%
 
 # view final table
 Hs_table_clean
+write_csv(Hs_table_clean, "tables/Hs_table_clean.csv")
+
+
+# Create a more presentable table splitting each population up.
+
+
+
+tt <- gridExtra::ttheme_default(base_size = 20)
+
+# make a readable version (full site names + nicer parameter text)
+Hs_table_clean_2 <- Hs_table_clean %>%
+  mutate(
+    site = case_when(
+      site == "MG" ~ "Mount Graham",
+      site == "WM" ~ "White Mountains",
+      TRUE ~ site
+    ),
+    parameter = gsub("_", " ", parameter)
+  )
+
+# --- Mount Graham Hs table ---
+Hs_mg <- Hs_table_clean_2 %>%
+  filter(site == "Mount Graham") %>%
+  select(parameter, Hs, var_among_squirrels, var_within_squirrels) %>%
+  rename(`Call property` = parameter,
+         `Var among squirrels` = var_among_squirrels,
+         `Var within squirrels` = var_within_squirrels)
+
+title_hs_mg <- grid::textGrob(
+  "Mount Graham Red Squirrels: Beecher's Hs by Acoustic Parameter",
+  gp = grid::gpar(fontsize = 16, fontface = "bold")
+)
+
+table_hs_mg <- gridExtra::tableGrob(Hs_mg, rows = NULL, theme = tt)
+
+pdf("figures/hs_table_mount_graham.pdf", width = 8.5, height = 11)
+grid::grid.newpage()
+grid::grid.draw(gridExtra::arrangeGrob(title_hs_mg, table_hs_mg, ncol = 1, heights = c(0.3, 10.7)))
+dev.off()
+
+# --- White Mountains Hs table ---
+Hs_wm <- Hs_table_clean_2 %>%
+  filter(site == "White Mountains") %>%
+  select(parameter, Hs, var_among_squirrels, var_within_squirrels) %>%
+  rename(`Call property` = parameter,
+         `Var among squirrels` = var_among_squirrels,
+         `Var within squirrels` = var_within_squirrels)
+
+title_hs_wm <- grid::textGrob(
+  "White Mountains Red Squirrels: Beecher's Hs by Acoustic Parameter",
+  gp = grid::gpar(fontsize = 16, fontface = "bold")
+)
+
+table_hs_wm <- gridExtra::tableGrob(Hs_wm, rows = NULL, theme = tt)
+
+pdf("figures/hs_table_white_mountains.pdf", width = 8.5, height = 11)
+grid::grid.newpage()
+grid::grid.draw(gridExtra::arrangeGrob(title_hs_wm, table_hs_wm, ncol = 1, heights = c(0.3, 10.7)))
+dev.off()
+
+# make a comparizon figure that shows comparison between wm Hs and mg Hs
+# Bar graph. MG vs WM side-by-side for each parameter
+p_hs_bar <- Hs_table_clean_2 %>%
+  ggplot(aes(x = parameter, y = Hs, fill = site)) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
+  coord_flip() +
+  scale_fill_manual(values = c("Mount Graham" = "#0072B2",  # blue
+                               "White Mountains" = "#E69F00")) + # orange
+  labs(
+    title = "Beecher's Hs by acoustic parameter (MG vs WM)",
+    x = NULL,
+    y = "Hs (bits)",
+    fill = "Population"
+  ) +
+  theme_bw() +
+  theme(
+    legend.position = "top",
+    plot.title = element_text(face = "bold", size = 18),
+    
+    # axis tick labels (more readable)
+    axis.text.y = element_text(size = 14),  # parameter names
+    axis.text.x = element_text(size = 14),  # Hs tick numbers
+    
+    # axis titles
+    axis.title.x = element_text(size = 16), # this is "Hs (bits)" after coord_flip()
+    axis.title.y = element_text(size = 16),
+    
+    # optional: legend text/title sizes to match
+    legend.title = element_text(size = 14),
+    legend.text  = element_text(size = 13)
+  )
+
+p_hs_bar
+
+ggsave("figures/hs_compare_bar.png", plot = p_hs_bar, width = 10, height = 7, dpi = 300)
 
 
 ```
 
-## 
+## Create fake forshadowing plots
+
+```{r}
+# some of my parameters
+fake_params <- c(
+  "call duration", "note rate", "peak freq", "bandwidth",
+  "entropy", "rms", "energy", "break"
+)
+
+# -----------------------------
+# Fake dataset 1: NO individuality (low Hs, basically flat)
+# -----------------------------
+hs_fake_no_individuality <- tibble(
+  parameter  = fake_params,
+  Hs = c(0.18, 0.20, 0.17, 0.19, 0.16, 0.15, 0.14, 0.18)
+) %>%
+  mutate(parameter = factor(parameter, levels = fake_params))
+
+# -----------------------------
+# Fake dataset 2: HIGH individuality (much higher Hs, more dramatic)
+# -----------------------------
+hs_fake_high_individuality <- tibble(
+  parameter  = fake_params,
+  Hs = c(3.8, 3.1, 5.2, 3.6, 4.4, 2.7, 2.4, 3.0)
+) %>%
+  mutate(parameter = factor(parameter, levels = fake_params))
+
+# -----------------------------
+# Plot function so both match style
+# -----------------------------
+plot_fake_hs <- function(df, title_text) {
+  ggplot(df, aes(x = parameter, y = Hs)) +
+    geom_col(na.rm = TRUE) +
+    coord_flip() +
+    labs(
+      title = title_text,
+      x = NULL,
+      y = "Hs (bits)"
+    ) +
+    theme_classic() +
+    theme(
+      axis.text = element_text(size = 14),     # tick labels
+      axis.title = element_text(size = 16),    # axis titles
+      plot.title = element_text(size = 18)     # plot title
+    )
+}
+
+# Make the two plots
+plot_fake_hs(hs_fake_no_individuality, "Hs: No individuality")
+plot_fake_hs(hs_fake_high_individuality, "Hs: High individuality")
+p_no <- plot_fake_hs(hs_fake_no_individuality, "Hs: No individuality")
+p_hi <- plot_fake_hs(hs_fake_high_individuality, "Hs: High individuality")
+ggsave("figures/hs_no_individuality.png", plot = p_no, width = 7, height = 4.5, dpi = 300)
+ggsave("figures/hs_high_individuality.png", plot = p_hi, width = 7, height = 4.5, dpi = 300)
+```
