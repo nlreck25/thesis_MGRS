@@ -52,7 +52,7 @@ n_squirrels = n_distinct(sq_ID) \# number of unique squirrels
 ```{r}
 
 # load data
-detections <- read_csv("data_raw/31dec2025_detections9.csv")
+detections <- read_csv("data_raw/31dec2025_detections10.csv")
 combined   <- read_csv("data_raw/combined_sq_data6.csv")
 
 # created a unique call id number so that the note number doesnt collapse
