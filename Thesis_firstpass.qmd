@@ -22,7 +22,7 @@ library(tidyverse)
   sq_data <- read_csv("data_raw/combined_sq_data6.csv")
 view(sq_data)
 
-detections <- read_csv("data_raw/31dec2025_detections9.csv")
+detections <- read_csv("data_raw/31dec2025_detections10.csv")
 
 # create a new column for call number, gsub will cut out the file name so that i just have sq id midden date time.
 
