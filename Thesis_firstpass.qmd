@@ -18,53 +18,49 @@ library(lme4)
 library(effectsize)
 library(tidyverse)
 
+# Load Data 
+detections <- read_csv("data_raw/detections08.csv") %>%
+  rename(
+    note_number    = `#`,
+    break_s        = `break`,
+    start_time     = `start time`,
+    end_time       = `end time`,
 
-  sq_data <- read_csv("data_raw/combined_sq_data6.csv")
-view(sq_data)
+    peak_freq_mean = `peak freq(mean)`,
+    peak_ampl_mean = `peak ampl(mean)`,
+    min_freq_mean  = `min freq(mean)`,
+    max_freq_mean  = `max freq(mean)`,
+    bandw_mean     = `bandw(mean)`,
 
-detections <- read_csv("data_raw/31dec2025_detections10.csv")
-
-# create a new column for call number, gsub will cut out the file name so that i just have sq id midden date time.
-
-# Clean break_s: "_" = missing, then make numeric
-detections <- detections %>%
-  rename(break_s = break) %>%
-  mutate(
-    break_s = as.character(break_s),
-    break_s = na_if(break_s, "")
+    quart_25_mean  = `quart 25(mean)`,
+    quart_50_mean  = `quart 50(mean)`,
+    quart_75_mean  = `quart 75(mean)`,
+    entropy_mean   = `entropy(mean)`
   )
 
 
 
 
-```
-
-sq_rattle_data %\>%
-
-filter(site == "MG") %\>% \# only Mount Graham data
-
-summarise(
-
-n_squirrels = n_distinct(sq_ID) \# number of unique squirrels
-
-)
-
-```{r}
-
-# load data
-detections <- read_csv("data_raw/31dec2025_detections10.csv")
-combined   <- read_csv("data_raw/combined_sq_data6.csv")
-
-# created a unique call id number so that the note number doesnt collapse
-detections$uniqueid <- sub(".*\\\\(.*)\\.wav$", "\\1", detections$filename) 
 
 
-# combine data. Try the merge function merge(x, y, by.x = "whatever column", "column, by .y = specify although x and although y, (It will only merge things that are the same what my columns are)
+combined <- read_csv("data_raw/combined_sq_data6.csv")
 
-sq_rattle_data<- merge(detections, combined, by.x = "midden", by.y = "midden", all.x = TRUE, all.y = FALSE) %>% 
-  arrange(midden, uniqueid, rattle_no, note_number)
+# Clean break_s column 
+detections <- detections %>%
+  mutate(
+    # Clean break_s: "_" = missing, then make numeric
+    break_s = as.character(break_s),
+    break_s = na_if(break_s, "_"),
+    break_s = as.numeric(break_s),
+   
+    # Create uniqueid from filename
+    uniqueid = filename %>%
+      str_replace("^.*[\\\\/]", "") %>%   # drop any path (works for \ and /)
+      str_remove("\\.wav$") %>%          # drop extension
+      if_else(str_count(., "_") > 2, str_replace(., "^[^_]*_", ""), .)  # drop leading prefix if present
+  )
 
-# ---- combined: build uniqueid ----
+# make sure all dates, TOD, are consistent
 combined <- combined %>%
   mutate(
     # TOD as 4-digit text (works whether TOD is numeric or already "0645")
@@ -81,22 +77,22 @@ combined <- combined %>%
     uniqueid = paste0(midden, "_", format(date_parsed, "%m%d%Y"), "_", TOD)
   )
 
-# ---- detections: extract uniqueid from filename ----
-detections <- detections %>%
-  mutate(
-    uniqueid = filename %>%
-      str_replace("^.*[\\\\/]", "") %>%   # drop any path (works for \ and /)
-      str_remove("\\.wav$") %>%          # drop extension
-      if_else(str_count(., "_") > 2, str_replace(., "^[^_]*_", ""), .)  # drop leading prefix if present
-  )
+# Merge Data (Keep all recordings)
+sq_rattle_data <- merge(detections, combined, by.x = "uniqueid", by.y = "uniqueid", all = TRUE)
+```
 
-# ---- merge ----
-sq_rattle_data <- merge(detections, combined, by.x = "uniqueid", by.y = "uniqueid")
+sq_rattle_data %\>%
 
+filter(site == "MG") %\>% \# only Mount Graham data
 
+summarise(
 
+n_squirrels = n_distinct(sq_ID) \# number of unique squirrels
 
-#### quick check ssee if all squirrels merged correctly #####
+)
+
+```{r}
+#### quick check see if all squirrels merged correctly #####
 
 # mt graham squirrels
 
@@ -144,19 +140,19 @@ sq_rattle_data %>%
 ## Distance bias check on parameters
 
 ```{r}
-
-# Calculate note rate
+# Calculate note rate 
 sq_rattle_data <- sq_rattle_data %>%
   group_by(uniqueid, rattle_no) %>% 
   mutate(
-    note_rate = n() / first(call_duration)
+    note_rate = max(note_number, na.rm = TRUE) /
+                as.numeric(first(call_duration))
   ) %>%
   ungroup()
 
 
+# excluding note_umber
 params <- c(
   "call_duration",
-  "note_number",
   "note_rate",
   "duration",
   "break_s",
@@ -176,26 +172,14 @@ params <- c(
 )
 
 
-dir.create("figures/distance_bias", recursive = TRUE, showWarnings = FALSE)
-
 for (p in params) {
 
-  g <- ggplot(
+  dist_bias_plot <- ggplot(
     sq_rattle_data,
-    aes(x = distance, y = .data[[p]], color = site)
+    aes(x = distance, y = !!sym(p), color = site)
   ) +
-    geom_point(na.rm = TRUE, alpha = 0.7) +
-    geom_smooth(
-      method = "lm",
-      se = FALSE,
-      na.rm = TRUE
-    ) +
-    scale_color_manual(
-      values = c(
-        "Mount Graham" = "#009E73",   # bluish-green
-        "White Mountains" = "#CC79A7" # purple
-      )
-    ) +
+    geom_point(alpha = 0.7, na.rm = TRUE) +
+    geom_smooth(method = "lm", se = FALSE, na.rm = TRUE) +
     labs(
       title = paste("Distance bias check:", p),
       x = "Distance recorded (m)",
@@ -203,24 +187,20 @@ for (p in params) {
       color = "Population"
     ) +
     theme_bw() +
-    theme(
-      plot.title = element_text(face = "bold"),
-      axis.title = element_text(size = 12),
-      axis.text = element_text(size = 10),
-      legend.position = "top"
-    )
+    theme(legend.position = "top")
 
+  print(dist_bias_plot)
   ggsave(
-    filename = file.path(
-      "figures/distance_bias",
-      paste0("distance_bias_", p, ".png")
-    ),
-    plot = g,
-    width = 7,
-    height = 5,
-    dpi = 300
-  )
+  filename = paste0("figures/distance_bias/dist_bias_", p, ".png"),
+  plot = dist_bias_plot,
+  width = 7,
+  height = 5,
+  dpi = 300
+)
 }
+
+
+
 
 ```
 
@@ -1429,53 +1409,206 @@ ggsave("figures/wm_icc_dotplot.png", plot = p_wm_icc, width = 8, height = 5, dpi
 ```
 
 ```{r}
-# add site labels to each ICC table
-wm_icc_results <- wm_icc_results %>%
-  mutate(site = "White Mountains")
+# ------------------------------------------------------------------------------
+# ICC Analysis with Bootstrapping
+# ------------------------------------------------------------------------------
 
-mg_icc_results <- mg_icc_results %>%
-  mutate(site = "Mount Graham")
+# EXPLANATION OF BOOTSTRAPPING:
+# Bootstrapping is a resampling method used to estimate statistics (like ICC)
+# and their uncertainty (Confidence Intervals) by randomly sampling the observed data
+# with replacement. It simulates repeating the experiment many times to see
+# how much the result varies. This is especially useful for biological data
+# where distributions may not be perfectly normal.
 
-# combine for plotting
-icc_results_both <- bind_rows(wm_icc_results, mg_icc_results)
+# Function to calculate ICC from a linear mixed model
+# ICC = variance_among_groups / (variance_among_groups + variance_within_groups)
+calc_icc_lmer <- function(data, indices, formula) {
+  d <- data[indices, ] # resample data
+ 
+  # Fit the model with the resampled data
+  # We use tryCatch to handle cases where the model might not converge on a random sample
+  fit <- tryCatch({
+    lme4::lmer(formula, data = d, REML = TRUE) # REML is simpler/faster for this
+  }, error = function(e) return(NULL))
+ 
+  if (is.null(fit)) return(NA)
+ 
+  # Extract variance components
+  vc <- as.data.frame(lme4::VarCorr(fit))
+  var_among  <- vc$vcov[vc$grp == "sq_ID"]
+  var_within <- vc$vcov[vc$grp == "Residual"]
+ 
+  # Calculate ICC
+  icc <- var_among / (var_among + var_within)
+  return(icc)
+}
 
-# facet plot: keeps site-specific ordering without "combining" in reorder()
-p_icc_facet <- icc_results_both %>%
-  mutate(param_site = paste(parameter, site, sep = "___")) %>%
-  ggplot(aes(x = icc, y = reorder(param_site, icc))) +
-  geom_point(size = 3, na.rm = TRUE) +
-  facet_wrap(~ site, scales = "free_y") +
-  scale_y_discrete(labels = function(x) sub("___.*$", "", x)) +
+# Wrapper function to run bootstrap for a specific parameter and site
+run_bootstrap_icc <- function(df, param, n_reps = 1000) {
+  # Formula: parameter depends on random effect of sq_ID
+  f <- as.formula(paste(param, "~ 1 + (1 | sq_ID)"))
+ 
+  # Run bootstrap
+  # strata = df$sq_ID ensures we sample appropriately if needed,
+  # but standard simple bootstrap rows is usually fine for this.
+  # However, to respect the structure, we ideally resample individuals,
+  # but simple row resampling is a common first pass approximation for CIs.
+ 
+  boot_res <- boot::boot(data = df, statistic = calc_icc_lmer, R = n_reps, formula = f)
+ 
+  # Get Confidence Interval (Basic or Percentile)
+  ci <- tryCatch({
+    boot::boot.ci(boot_res, type = "perc")$percent[4:5]
+  }, error = function(e) c(NA, NA))
+ 
+  return(list(
+    icc = boot_res$t0,       # Observed ICC
+    ci_lower = ci[1],        # Lower CI
+    ci_upper = ci[2]         # Upper CI
+  ))
+}
+
+# Run ICC analysis for all parameters for both sites
+icc_results <- data.frame()
+
+# params is defined earlier in the script
+for (site_name in unique(sq_avgs$site)) {
+  if (is.na(site_name)) next # skip if NA site
+ 
+  site_data <- call_avgs %>% filter(site == site_name)
+ 
+  for (p in params) {
+    if(p == "no_notes" || p == "call_duration") next # Skip these if not acoustic parameters
+   
+    cat("Bootstrapping ICC for:", site_name, "-", p, "\n")
+   
+    res <- run_bootstrap_icc(site_data, p, n_reps = 500) # 500 reps for speed, use 1000+ for final
+   
+    icc_results <- rbind(icc_results, data.frame(
+      site = site_name,
+      parameter = p,
+      ICC = res$icc,
+      CI_Lower = res$ci_lower,
+      CI_Upper = res$ci_upper
+    ))
+  }
+}
+
+# ------------------------------------------------------------------------------
+# Create the Plots
+# ------------------------------------------------------------------------------
+
+# Rename sites for better labels
+icc_plot_data <- icc_results %>%
+  mutate(
+    site_label = case_when(
+      site == "MG" ~ "Mount Graham",
+      site == "WM" ~ "White Mountains",
+      TRUE ~ site
+    ),
+    # Clean parameter names
+    param_clean = gsub("_", " ", parameter)
+  )
+
+# Plot
+p_icc <- ggplot(icc_plot_data, aes(x = param_clean, y = ICC, color = site_label, shape = site_label)) +
+  geom_point(position = position_dodge(width = 0.5), size = 6) +
+  geom_errorbar(aes(ymin = CI_Lower, ymax = CI_Upper),
+                position = position_dodge(width = 0.5), width = 0.2, stroke = 1.5) +
+  scale_y_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.2)) +
+  scale_color_manual(values = c("Mount Graham" = "black", "White Mountains" = "black")) +
+  scale_shape_manual(values = c("Mount Graham" = 19, "White Mountains" = 1)) + # 1 = open circle, 19 = filled circle
   labs(
-    x = "ICC (proportion of variance among squirrels)",
-    y = "Parameter",
-    title = "Individual distinctiveness by parameter (ICC)"
+    title = "ICC with Bootstrapped 95% Confidence Intervals",
+    x = "Call Property",
+    y = "ICC",
+    color = "Population",
+    shape = "Population"
   ) +
   theme_classic() +
   theme(
-    plot.title  = element_text(size = 18, face = "bold"),
-    strip.text  = element_text(size = 16, face = "bold"),
-    axis.title.x = element_text(size = 15),
-    axis.title.y = element_text(size = 15)
+    legend.title = element_text(size = 14),
+    legend.text  = element_text(size = 12),
+    axis.title.x = element_text(size = 18),
+    axis.title.y = element_text(size = 18),
+    axis.text.x  = element_text(size = 12, angle = 45, hjust = 1),
+    axis.text.y  = element_text(size = 14)
   )
 
-p_icc_facet
-
-
-ggsave(
-  filename = "figures/icc_facet_sites.png",
-  plot = p_icc_facet,
-  width = 11,
-  height = 7,
-  dpi = 300
-)
-
+print(p_icc)
+ggsave("figures/ICC_bootstrap_plot.png", plot = p_icc, width = 10, height = 6, dpi = 300)
 
 ```
 
 ## Sq variation catepillar plot
 
 ```{r}
+# ------------------------------------------------------------------------------
+# Caterpillar Plot (Strip Chart) for Minimum Frequency
+# ------------------------------------------------------------------------------
+# Goal: Show individual dots for every call per squirrel to visualize within-individual variation.
+# X-axis: Squirrel ID (ordered by mean frequency for clarity) - Renumbered 1, 2, 3...
+# Y-axis: Minimum Frequency
+# Facet: Split by Site (MG vs WM)
+
+# Prepare data:
+# 1. Filter valid data
+# 2. Calculate mean per squirrel to sort them
+# 3. Create a simple "1, 2, 3..." label for each squirrel within its site
+plot_data <- call_avgs %>%
+  filter(!is.na(min_freq_mean), !is.na(sq_ID)) %>%
+  mutate(
+    # Create full names for the plot labels
+    site_label = case_when(
+      site == "MG" ~ "Mount Graham",
+      site == "WM" ~ "White Mountains",
+      TRUE ~ site
+    )
+  ) %>%
+  group_by(site_label) %>%
+  mutate(
+    # Reorder sq_ID based on their individual mean min_freq
+    sq_ordered = reorder(sq_ID, min_freq_mean, FUN = mean)
+  ) %>%
+  arrange(site_label, sq_ordered) %>%
+  # Create a dense rank (1, 2, 3...) for the ordered squirrels
+  mutate(sq_num_label = as.integer(factor(sq_ordered, levels = unique(sq_ordered)))) %>%
+  ungroup()
+
+p_caterpillar <- plot_data %>%
+  ggplot(aes(x = factor(sq_num_label), y = min_freq_mean, color = site_label)) +
+ 
+  # Add the dots
+  geom_point(size = 2, alpha = 1, show.legend = FALSE) +
+ 
+  # Separate the populations
+  facet_wrap(~ site_label, scales = "free_x") +
+ 
+  # Labels
+  labs(
+    title = "Individual Variation in Minimum Frequency",
+    x = "Squirrel",
+    y = "Minimum Frequency (Hz)"
+  ) +
+ 
+  scale_color_manual(values = c("Mount Graham" = "black", "White Mountains" = "black")) +
+ 
+  theme_bw() +
+  theme(
+    axis.text.x = element_text(angle = 0, hjust = 0.5),
+
+    # make plot title bigger
+    plot.title = element_text(size = 16, face = "bold"),
+
+    # make axis titles bigger
+    axis.title.x = element_text(size = 16),
+    axis.title.y = element_text(size = 16),
+
+    strip.text = element_text(size = 14, face = "bold")
+  )
+
+print(p_caterpillar)
+ggsave("figures/caterpillar_min_freq.png", plot = p_caterpillar, width = 10, height = 6, dpi = 300)
 
 ```
 
@@ -1667,7 +1800,7 @@ dev.off()
 Check to see if there is any recording bias by distance. Plot distance = x and parameter = y for every parameter for each population. Then compute Hs beechers stat.
 
 ```{r}
-# Hs (Beecher's information statistic)
+# Hs (Beecher's information statistic) 
 # calculate Hs (in bits) for each acoustic parameter, separately for MG and WM
 
 # function: compute Beecher's Hs for ONE parameter in MG calls
@@ -1840,56 +1973,5 @@ ggsave("figures/hs_compare_bar.png", plot = p_hs_bar, width = 10, height = 7, dp
 
 ## Create fake forshadowing plots
 
-```{r}
-# some of my parameters
-fake_params <- c(
-  "call duration", "note rate", "peak freq", "bandwidth",
-  "entropy", "rms", "energy", "break"
-)
-
-# -----------------------------
-# Fake dataset 1: NO individuality (low Hs, basically flat)
-# -----------------------------
-hs_fake_no_individuality <- tibble(
-  parameter  = fake_params,
-  Hs = c(0.18, 0.20, 0.17, 0.19, 0.16, 0.15, 0.14, 0.18)
-) %>%
-  mutate(parameter = factor(parameter, levels = fake_params))
-
-# -----------------------------
-# Fake dataset 2: HIGH individuality (much higher Hs, more dramatic)
-# -----------------------------
-hs_fake_high_individuality <- tibble(
-  parameter  = fake_params,
-  Hs = c(3.8, 3.1, 5.2, 3.6, 4.4, 2.7, 2.4, 3.0)
-) %>%
-  mutate(parameter = factor(parameter, levels = fake_params))
-
-# -----------------------------
-# Plot function so both match style
-# -----------------------------
-plot_fake_hs <- function(df, title_text) {
-  ggplot(df, aes(x = parameter, y = Hs)) +
-    geom_col(na.rm = TRUE) +
-    coord_flip() +
-    labs(
-      title = title_text,
-      x = NULL,
-      y = "Hs (bits)"
-    ) +
-    theme_classic() +
-    theme(
-      axis.text = element_text(size = 14),     # tick labels
-      axis.title = element_text(size = 16),    # axis titles
-      plot.title = element_text(size = 18)     # plot title
-    )
-}
-
-# Make the two plots
-plot_fake_hs(hs_fake_no_individuality, "Hs: No individuality")
-plot_fake_hs(hs_fake_high_individuality, "Hs: High individuality")
-p_no <- plot_fake_hs(hs_fake_no_individuality, "Hs: No individuality")
-p_hi <- plot_fake_hs(hs_fake_high_individuality, "Hs: High individuality")
-ggsave("figures/hs_no_individuality.png", plot = p_no, width = 7, height = 4.5, dpi = 300)
-ggsave("figures/hs_high_individuality.png", plot = p_hi, width = 7, height = 4.5, dpi = 300)
+```         
 ```
