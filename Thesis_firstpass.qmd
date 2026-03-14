@@ -1,5 +1,5 @@
 ---
-title: "First pass analysis"
+title: "Identity information analysis"
 author: "Nikki Reck"
 format: html
 editor: visual
@@ -7,19 +7,20 @@ editor: visual
 
 ## Background
 
-This is my first pass analysis for my data on red squirrel vocal distinctiveness. I will be cleaning the data so that it is compatible with R (renaming columns, and creating new columns). Then I will take averages of each call from each animal, then take averages of all calls per animal. Then I will look at how the two populations may or may not differ.
+Analysis of acoustic identity information of Mount Graham red squirrels and White Mountain red squirrels.
 
 ## Load Data
 
-Load in packages and the data sets I will be using.
+Load in packages and the data.
 
 ```{r}
 library(lme4)
 library(effectsize)
 library(tidyverse)
 
-# Load Data 
-detections <- read_csv("data_raw/detections08.csv") %>%
+#### Load Data Avisoft rattle detections spreadsheet ###
+
+detections <- read_csv("data_raw/detections10.csv") %>%
   rename(
     note_number    = `#`,
     break_s        = `break`,
@@ -38,12 +39,11 @@ detections <- read_csv("data_raw/detections08.csv") %>%
     entropy_mean   = `entropy(mean)`
   )
 
+#### Load squirrel data spreadsheet ####
+combined <- read_csv("data_raw/combined_sq_data_new.csv")
 
 
 
-
-
-combined <- read_csv("data_raw/combined_sq_data6.csv")
 
 # Clean break_s column 
 detections <- detections %>%
@@ -79,67 +79,7 @@ combined <- combined %>%
 
 # Merge Data (Keep all recordings)
 sq_rattle_data <- merge(detections, combined, by.x = "uniqueid", by.y = "uniqueid", all = TRUE)
-```
 
-sq_rattle_data %\>%
-
-filter(site == "MG") %\>% \# only Mount Graham data
-
-summarise(
-
-n_squirrels = n_distinct(sq_ID) \# number of unique squirrels
-
-)
-
-```{r}
-#### quick check see if all squirrels merged correctly #####
-
-# mt graham squirrels
-
-#  sq data BEFORE i merged data frames
-combined %>%
-  filter(site == "MG") %>%
-  summarise(
-    sq_IDs = list(sort(unique(sq_ID)))
-  )
-# 19 sqs
-
-# sq data AFTER I merge data frames
-sq_rattle_data %>%
-  filter(site == "MG") %>%
-  summarise(
-    sq_IDs = list(sort(unique(sq_ID)))
-  )
-# 19sqs
-
-
-################
-
-# White mountain squirrels
-
-#  sq data BEOFRE i merged data frames
-combined %>%
-  filter(site == "WM") %>%
-  summarise(
-    sq_IDs = list(sort(unique(sq_ID)))
-  )
-# 21 sqs
-
-
-
-# sq data AFTER I merge data frames
-sq_rattle_data %>%
-  filter(site == "WM") %>%
-  summarise(
-    sq_IDs = list(sort(unique(sq_ID)))
-  )
-# 21 sqs
-
-```
-
-## Distance bias check on parameters
-
-```{r}
 # Calculate note rate 
 sq_rattle_data <- sq_rattle_data %>%
   group_by(uniqueid, rattle_no) %>% 
@@ -149,8 +89,20 @@ sq_rattle_data <- sq_rattle_data %>%
   ) %>%
   ungroup()
 
+```
 
-# excluding note_umber
+```{r}
+
+```
+
+## Distance bias check on parameters
+
+```{r}
+# Create a log_distance variable to model attenuation correctly
+sq_rattle_data <- sq_rattle_data %>%
+  mutate(log_distance = log(distance))
+
+# excluding note_number
 params <- c(
   "call_duration",
   "note_rate",
@@ -171,18 +123,18 @@ params <- c(
   "entropy_mean"
 )
 
+# --- Visual Check for Biological Distance Bias ---
 
 for (p in params) {
-
   dist_bias_plot <- ggplot(
     sq_rattle_data,
-    aes(x = distance, y = !!sym(p), color = site)
+    aes(x = log_distance, y = !!sym(p), color = site)
   ) +
-    geom_point(alpha = 0.7, na.rm = TRUE) +
-    geom_smooth(method = "lm", se = FALSE, na.rm = TRUE) +
+    geom_point(alpha = 0.5, na.rm = TRUE) +
+    geom_smooth(method = "lm", se = TRUE, na.rm = TRUE, color = "black") + # Overall trend line
     labs(
-      title = paste("Distance bias check:", p),
-      x = "Distance recorded (m)",
+      title = paste("Visual Distance Bias Check:", p),
+      x = "Log Distance (m)",
       y = p,
       color = "Population"
     ) +
@@ -190,18 +142,21 @@ for (p in params) {
     theme(legend.position = "top")
 
   print(dist_bias_plot)
+ 
+  # Ensure the figures/distance_bias folder exists, then save the plot
+  if(!dir.exists("figures/distance_bias")) {
+    dir.create("figures/distance_bias", recursive = TRUE)
+  }
   ggsave(
-  filename = paste0("figures/distance_bias/dist_bias_", p, ".png"),
-  plot = dist_bias_plot,
-  width = 7,
-  height = 5,
-  dpi = 300
-)
+    filename = paste0("figures/distance_bias/dist_bias_", p, ".png"),
+    plot = dist_bias_plot,
+    width = 7,
+    height = 5,
+    dpi = 300
+  )
 }
 
-
-
-
+# Dist effects for rms, peaktopeak, peak amp mean
 ```
 
 ## Call level Averages
@@ -217,6 +172,8 @@ call_avgs <- sq_rattle_data %>%
   summarise(
     no_notes = n(),
     call_duration = first(call_duration),
+    distance = first(distance),
+    log_distance = first(log_distance),
     note_rate = no_notes / call_duration,
 
     duration = mean(duration, na.rm = TRUE),
@@ -300,7 +257,7 @@ names(sq_avgs)
 
 ```
 
-## Visualization for averages- MG
+## Call avgs MG- visuals
 
 Create figures for a clear look into data.
 
@@ -803,7 +760,7 @@ ggsave("figures/var_note_rate_MG.png",
 
 ```
 
-## Visualization for averages-WM
+## Call avgs WM- visuals
 
 ```{r}
 
@@ -1246,51 +1203,65 @@ ggsave("figures/var_entropy_mean_WM.png",
 
 ```
 
+## Distance Cleaning
+
+```{r}
+# Creating a vector that contains all the parameters that show distance sensitivity. All my other parameters will run normally with distance correction. (params)
+
+dist_sensitive_params <- c(
+  "call_duration",
+  "rms",
+  "peak_ampl_mean",
+  "peaktopeak",
+  "quart_75_mean"
+)
+
+# create a distance correction function
+
+apply_distance_correction <- function(df, params_to_correct) {
+  df_cleaned <- as.data.frame(df) # Force it to a plain dataframe to fix names() bugs
+ 
+  for (p in params_to_correct) {
+    if (p %in% colnames(df_cleaned)) {
+      # 1. Fit linear model (parameter ~ log_distance)
+      formula_str <- paste0(p, " ~ log_distance")
+      fit <- lm(as.formula(formula_str), data = df_cleaned, na.action = na.exclude)
+     
+      # 2. Get the predicted value at the average distance
+      mean_dist <- mean(df_cleaned$log_distance, na.rm = TRUE)
+      pred_at_mean <- predict(fit, newdata = data.frame(log_distance = mean_dist))
+     
+      # 3. Extract individual residuals (the "fingerprint")
+      resids <- resid(fit)
+     
+      # 4. Corrected value = prediction at average + residuals
+      df_cleaned[[p]] <- pred_at_mean + resids
+    }
+  }
+  return(df_cleaned)
+}
+
+# Clean both datasets
+call_avgs_mg_cleaned <- apply_distance_correction(call_avgs_mg, dist_sensitive_params)
+call_avgs_wm_cleaned <- apply_distance_correction(call_avgs_wm, dist_sensitive_params)
+
+```
+
 ## ICC MG
-
-Do mt graham red squirrels have individual distinctiveness in their calls? Do White Mountain squirrels have distiveness in their calls? I will run a one way ANOVA and then control for inflated p-values by running a FDR/BH sensitivity test.
-
-I will also run a mixed model to better explain variation.
 
 ```{r}
 ########### Run a mixed model ###############
 
-# Mount Graham call-level data for mixed models
-mg_df <- call_avgs_mg
-
-
-
-# Just doing one parameter to test 'entropy_mean'
-mg_entropy_mod <- lmer(entropy_mean ~ 1 + (1 | sq_ID), data = mg_df)
-summary(mg_entropy_mod)
-
-# compute ICC
-
-mg_entropy_vc <- VarCorr(mg_entropy_mod)
-
-mg_var_sq_ID <- as.numeric(mg_entropy_vc$sq_ID[1])
-mg_var_resid  <- attr(mg_entropy_vc, "sc")^2
-
-mg_icc_entropy <- mg_var_sq_ID / (mg_var_sq_ID + mg_var_resid)
-mg_icc_entropy
-
-# grand means
-
-mg_entropy_effects <- ranef(mg_entropy_mod)$sq_ID[, 1]
-mg_entropy_grand_mean <- fixef(mg_entropy_mod)[1]
-
-mg_entropy_means <- mg_entropy_grand_mean + mg_entropy_effects
-mg_entropy_means
-
-
-# Everything looks good, so I will run all parameters
-
+# Mount Graham call-level data for mixed models (distance adjusted)
+mg_df <- call_avgs_mg_cleaned
 
 mg_model_results <- lapply(params, function(param_name) {
 
+  mod_formula <- paste0(param_name, " ~ 1 + (1 | sq_ID)")
+
   # fit model for one parameter
   mg_mod <- lmer(
-    as.formula(paste0(param_name, " ~ 1 + (1 | sq_ID)")),
+    as.formula(mod_formula),
     data = mg_df
   )
 
@@ -1350,19 +1321,20 @@ ggsave("figures/mg_icc_dotplot.png", plot = p_mg_icc, width = 8, height = 5, dpi
 
 ## ICC WM
 
-Run a mixed model for the white mountain squirrels
-
 ```{r}
-# White Mountains: mixed models + ICC table + dotplot
+# White Mountains: mixed models (distance adjusted)
 
-#  WM call-level data
-wm_df <- call_avgs_wm
+#  WM call-level data (CLEANED)
+wm_df <- call_avgs_wm_cleaned
 
 #  Run all WM models + ICC
 wm_model_results <- lapply(params, function(param_name) {
 
+  wm_mod_formula <- paste0(param_name, " ~ 1 + (1 | sq_ID)")
+
+  # fit model for one parameter
   wm_mod <- lmer(
-    as.formula(paste0(param_name, " ~ 1 + (1 | sq_ID)")),
+    as.formula(wm_mod_formula),
     data = wm_df
   )
 
@@ -1408,6 +1380,8 @@ ggsave("figures/wm_icc_dotplot.png", plot = p_wm_icc, width = 8, height = 5, dpi
 
 ```
 
+## ICC bootstrapping
+
 ```{r}
 # ------------------------------------------------------------------------------
 # ICC Analysis with Bootstrapping
@@ -1422,11 +1396,12 @@ ggsave("figures/wm_icc_dotplot.png", plot = p_wm_icc, width = 8, height = 5, dpi
 
 # Function to calculate ICC from a linear mixed model
 # ICC = variance_among_groups / (variance_among_groups + variance_within_groups)
+
 calc_icc_lmer <- function(data, indices, formula) {
   d <- data[indices, ] # resample data
  
   # Fit the model with the resampled data
-  # We use tryCatch to handle cases where the model might not converge on a random sample
+  # use tryCatch to handle cases where the model might not converge on a random sample
   fit <- tryCatch({
     lme4::lmer(formula, data = d, REML = TRUE) # REML is simpler/faster for this
   }, error = function(e) return(NULL))
@@ -1446,13 +1421,8 @@ calc_icc_lmer <- function(data, indices, formula) {
 # Wrapper function to run bootstrap for a specific parameter and site
 run_bootstrap_icc <- function(df, param, n_reps = 1000) {
   # Formula: parameter depends on random effect of sq_ID
-  f <- as.formula(paste(param, "~ 1 + (1 | sq_ID)"))
- 
-  # Run bootstrap
-  # strata = df$sq_ID ensures we sample appropriately if needed,
-  # but standard simple bootstrap rows is usually fine for this.
-  # However, to respect the structure, we ideally resample individuals,
-  # but simple row resampling is a common first pass approximation for CIs.
+  # distance corrected with log_distance
+  f <- as.formula(paste(param, "~ log_distance + (1 | sq_ID)"))
  
   boot_res <- boot::boot(data = df, statistic = calc_icc_lmer, R = n_reps, formula = f)
  
@@ -1471,7 +1441,6 @@ run_bootstrap_icc <- function(df, param, n_reps = 1000) {
 # Run ICC analysis for all parameters for both sites
 icc_results <- data.frame()
 
-# params is defined earlier in the script
 for (site_name in unique(sq_avgs$site)) {
   if (is.na(site_name)) next # skip if NA site
  
@@ -1537,441 +1506,996 @@ p_icc <- ggplot(icc_plot_data, aes(x = param_clean, y = ICC, color = site_label,
 
 print(p_icc)
 ggsave("figures/ICC_bootstrap_plot.png", plot = p_icc, width = 10, height = 6, dpi = 300)
+ 
 
 ```
 
-## Sq variation catepillar plot
+## ICC table
 
 ```{r}
+# Create a Clean Publication Table
 # ------------------------------------------------------------------------------
-# Caterpillar Plot (Strip Chart) for Minimum Frequency
-# ------------------------------------------------------------------------------
-# Goal: Show individual dots for every call per squirrel to visualize within-individual variation.
-# X-axis: Squirrel ID (ordered by mean frequency for clarity) - Renumbered 1, 2, 3...
-# Y-axis: Minimum Frequency
-# Facet: Split by Site (MG vs WM)
+library(knitr)
 
-# Prepare data:
-# 1. Filter valid data
-# 2. Calculate mean per squirrel to sort them
-# 3. Create a simple "1, 2, 3..." label for each squirrel within its site
-plot_data <- call_avgs %>%
-  filter(!is.na(min_freq_mean), !is.na(sq_ID)) %>%
-  mutate(
-    # Create full names for the plot labels
-    site_label = case_when(
-      site == "MG" ~ "Mount Graham",
-      site == "WM" ~ "White Mountains",
-      TRUE ~ site
-    )
+# Clean up the raw numbers and format the columns for a presentation-ready table
+clean_icc_table <- icc_results %>%
+  dplyr::mutate(
+    parameter = str_replace_all(parameter, "_", " "), # Remove underscores
+    parameter = str_to_title(parameter), # Capitalize
+   
+    # Format numbers strictly to 3 decimal places
+    ICC = sprintf("%.3f", ICC),
+    CI_Lower = sprintf("%.3f", CI_Lower),
+    CI_Upper = sprintf("%.3f", CI_Upper),
+   
+    # Combine the Lower and Upper CIs into a single bracket format
+    CI = paste0("[", CI_Lower, ", ", CI_Upper, "]")
   ) %>%
-  group_by(site_label) %>%
-  mutate(
-    # Reorder sq_ID based on their individual mean min_freq
-    sq_ordered = reorder(sq_ID, min_freq_mean, FUN = mean)
+  dplyr::select(
+    site,
+    `Call Property` = parameter,
+    ICC,
+    CI
   ) %>%
-  arrange(site_label, sq_ordered) %>%
-  # Create a dense rank (1, 2, 3...) for the ordered squirrels
-  mutate(sq_num_label = as.integer(factor(sq_ordered, levels = unique(sq_ordered)))) %>%
-  ungroup()
+  # Pivot wider to create separate ICC and CI columns for each population
+  tidyr::pivot_wider(
+    names_from = site,
+    values_from = c(ICC, CI)
+  ) %>%
+  # Arrange columns to group Mount Graham (ICC, CI) and White Mountains (ICC, CI)
+  dplyr::select(
+    `Call Property`,
+    `ICC` = ICC_MG,         # Select the automatically generated column ICC_MG
+    `95% CI` = CI_MG,
+    `ICC ` = ICC_WM,        # Added a space to make the column name technically unique in R
+    `95% CI ` = CI_WM
+  ) %>%
+  dplyr::arrange(`Call Property`)
 
-p_caterpillar <- plot_data %>%
-  ggplot(aes(x = factor(sq_num_label), y = min_freq_mean, color = site_label)) +
- 
-  # Add the dots
-  geom_point(size = 2, alpha = 1, show.legend = FALSE) +
- 
-  # Separate the populations
-  facet_wrap(~ site_label, scales = "free_x") +
- 
-  # Labels
-  labs(
-    title = "Individual Variation in Minimum Frequency",
-    x = "Squirrel",
-    y = "Minimum Frequency (Hz)"
-  ) +
- 
-  scale_color_manual(values = c("Mount Graham" = "black", "White Mountains" = "black")) +
- 
-  theme_bw() +
-  theme(
-    axis.text.x = element_text(angle = 0, hjust = 0.5),
+# (You can open this in Excel and copy/paste perfectly into Word)
+write.csv(clean_icc_table, "tables/Clean_ICC_Bootstrap_Results.csv", row.names = FALSE)
 
-    # make plot title bigger
-    plot.title = element_text(size = 16, face = "bold"),
+# Print it using kable and kableExtra to create the overarching population titles!
+library(kableExtra)
+library(webshot2)
 
-    # make axis titles bigger
-    axis.title.x = element_text(size = 16),
-    axis.title.y = element_text(size = 16),
+icc_formatted_table <- kable(clean_icc_table, align = "l") %>%
+  add_header_above(c(" " = 1, "Mount Graham" = 2, "White Mountains" = 2)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
 
-    strip.text = element_text(size = 14, face = "bold")
+# Save the beautifully formatted table as an image in your figures folder
+# Note: You may need to run `install.packages("webshot")` and `webshot::install_phantomjs()` once in your R console for this to work
+save_kable(icc_formatted_table, "figures/Clean_ICC_Table.png")
+
+# Still display it in the HTML document
+icc_formatted_table
+
+kable(clean_icc_table, align = "l") %>%
+  add_header_above(c(" " = 1, "Mount Graham" = 2, "White Mountains" = 2)) %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed"))
+```
+
+## PIC MG
+
+```{r}
+#PIC is a classic bioacoustic metric (Robisson et al. 1993) used to assess which call properties
+#have the "potential" to encode individual identity. PIC = CV_among / CV_within.
+#If PIC > 1, the parameter varies MORE between squirrels than within a single squirrel,
+#meaning it could help distinguish individuals. Many older studies report PIC,
+#so we calculate it here for direct comparison to other published literature.
+
+
+# --- PIC + CVa + CVw + Partial Eta-Squared Calculation Function ---
+# PIC = CVa / mean_CVw
+# CVa (CV among) = SD of individual means / grand mean
+# mean_CVw (mean CV within) = average of each individual's (SD / mean)
+# Partial eta-squared = SS_among / (SS_among + SS_within) from a one-way ANOVA
+
+calc_pic_full <- function(df, params_list) {
+  # This function takes a call-level dataframe and a list of parameter names.
+  # It calculates CVa, mean CVw, PIC, and partial eta-squared for each parameter.
+ 
+  results <- tibble(
+    parameter = character(),
+    CVa = numeric(),
+    mean_CVw = numeric(),
+    PIC = numeric(),
+    partial_eta_sq = numeric()
   )
-
-print(p_caterpillar)
-ggsave("figures/caterpillar_min_freq.png", plot = p_caterpillar, width = 10, height = 6, dpi = 300)
-
-```
-
-## Stats-Grand mean/ SD and PICs
-
-tt \<- gridExtra::ttheme_default(base_size = 10)
-
-pic_mg \<- pic_table_2 %\>%
-
-filter(site == "Mount Graham") %\>%
-
-select(parameter, CVa, mean_CVw, PIC, eta2) %\>%
-
-rename(\`Call property\` = parameter)
-
-pic_wm \<- pic_table_2 %\>%
-
-filter(site == "White Mountains") %\>%
-
-select(parameter, CVa, mean_CVw, PIC, eta2) %\>%
-
-rename(\`Call property\` = parameter)
-
-png("figures/pic_table_mg.png", width = 1200, height = 700, res = 200)
-
-gridExtra::grid.table(pic_mg, theme = tt); dev.off()
-
-png("figures/pic_table_wm.png", width = 1200, height = 700, res = 200)
-
-gridExtra::grid.table(pic_wm, theme = tt); dev.off()
-
-```{r}
-
-# Output object: PIC summary table
-pic_summary_by_site <- data.frame()
-
-for (current_site in unique(call_avgs$site)) {
-
-  call_avgs_site <- call_avgs %>%
-    filter(site == current_site)
-
-  for (param in params) {
-
-    # Within-individual stats (across calls)
-    ind_stats <- call_avgs_site %>%
+ 
+  for (p in params_list) {
+    # Step 1: For each squirrel, calculate the mean and SD of this parameter
+    sq_stats <- df %>%
       group_by(sq_ID) %>%
       summarise(
-        ind_mean = mean(.data[[param]], na.rm = TRUE),
-        ind_sd   = sd(.data[[param]], na.rm = TRUE),
+        sq_mean = mean(.data[[p]], na.rm = TRUE),
+        sq_sd   = sd(.data[[p]], na.rm = TRUE),
         .groups = "drop"
       ) %>%
-      mutate(
-        CVw = (ind_sd / ind_mean) * 100
-      )
-
-    # Among-individual (grand) stats
-    grand_mean <- mean(ind_stats$ind_mean, na.rm = TRUE)
-    grand_sd   <- sd(ind_stats$ind_mean, na.rm = TRUE)
-    CVa        <- (grand_sd / grand_mean) * 100
-
-    mean_CVw <- mean(ind_stats$CVw, na.rm = TRUE)
-    min_CVw  <- min(ind_stats$CVw, na.rm = TRUE)
-    max_CVw  <- max(ind_stats$CVw, na.rm = TRUE)
-
-    PIC <- CVa / mean_CVw
-
-    # eta^2 (R^2 from one-way ANOVA)
-    model_data <- call_avgs_site %>%
-      select(sq_ID, all_of(param)) %>%
-      filter(!is.na(.data[[param]]))
-
-    eta2 <- summary(lm(aov(model_data[[param]] ~ as.factor(model_data$sq_ID))))$r.squared
-
-    # Append one row to summary table
-    pic_summary_by_site <- rbind(
-      pic_summary_by_site,
-      data.frame(
-        site       = current_site,
-        parameter  = param,
-        grand_mean = grand_mean,
-        grand_sd   = grand_sd,
-        CVa        = CVa,
-        mean_CVw   = mean_CVw,
-        min_CVw    = min_CVw,
-        max_CVw    = max_CVw,
-        PIC        = PIC,
-        eta2       = eta2,
-        n_IDs      = n_distinct(model_data$sq_ID),
-        n_calls    = nrow(model_data)
-      )
-    )
+      # CV for each individual = SD / mean
+      mutate(sq_cv = sq_sd / sq_mean)
+   
+    # Step 2: CVa = SD of the individual means / grand mean
+    grand_mean <- mean(sq_stats$sq_mean, na.rm = TRUE)
+    sd_among   <- sd(sq_stats$sq_mean, na.rm = TRUE)
+    cv_among   <- sd_among / grand_mean
+   
+    # Step 3: mean CVw = average of all individual CVs
+    cv_within <- mean(sq_stats$sq_cv, na.rm = TRUE)
+   
+    # Step 4: PIC = CVa / mean_CVw
+    pic_val <- cv_among / cv_within
+   
+    # Step 5: Partial eta-squared from a one-way ANOVA (parameter ~ sq_ID)
+    # partial eta^2 = SS_between / (SS_between + SS_within)
+    anova_formula <- as.formula(paste(p, "~ sq_ID"))
+    anova_res <- aov(anova_formula, data = df)
+    ss <- summary(anova_res)[[1]]["Sum Sq"]
+    ss_among  <- ss[1, 1]  # SS for sq_ID (between groups)
+    ss_within <- ss[2, 1]  # SS for Residuals (within groups)
+    p_eta_sq  <- ss_among / (ss_among + ss_within)
+   
+    results <- bind_rows(results, tibble(
+      parameter = p,
+      CVa = cv_among,
+      mean_CVw = cv_within,
+      PIC = pic_val,
+      partial_eta_sq = p_eta_sq
+    ))
   }
+ 
+  return(results)
 }
 
-pic_summary_by_site <- as_tibble(pic_summary_by_site)
-
-# dropiing the number of calls and sq IDs from the table
-pic_table_1 <- pic_summary_by_site %>%
-  select(-n_IDs, -n_calls)
-
-# cleaning up decimals
-pic_table_2 <- pic_table_1 %>%
-  mutate(
-    grand_mean = round(grand_mean, 2),
-    grand_sd   = round(grand_sd, 2),
-    CVa        = round(CVa, 2),
-    mean_CVw   = round(mean_CVw, 2),
-    min_CVw    = round(min_CVw, 2),
-    max_CVw    = round(max_CVw, 2),
-    PIC        = round(PIC, 2),
-    eta2       = round(eta2, 2),
-
-    # relabel sites (WM/MG -> full names)
-    site = case_when(
-      site == "WM" ~ "White Mountains",
-      site == "MG" ~ "Mount Graham",
-      TRUE ~ site
-    )
-  )
-
-pic_table_2
-
-write_csv(pic_table_2, "tables/pic_table_PIC_combined.csv")
 
 
-library(gridExtra)
-library(grid)
-library(gridExtra)
+## PIC MG
 
-# bigger table text
-tt <- gridExtra::ttheme_default(base_size = 22)
 
-pic_mg <- pic_table_2 %>%
-  filter(site == "Mount Graham") %>%
-  select(parameter, CVa, mean_CVw, PIC, eta2) %>%
-  mutate(parameter = gsub("_", " ", parameter)) %>%
-  rename(`Call property` = parameter)
+# Mount Graham PIC table
+mg_pic_results <- calc_pic_full(call_avgs_mg_cleaned, params)
 
-title_mg <- grid::textGrob(
-  "Mount Graham Red Squirrels: PIC Summary by Acoustic Parameter",
-  gp = grid::gpar(fontsize = 19, fontface = "bold")
-)
+mg_pic_results <- mg_pic_results %>%
+  mutate(across(where(is.numeric), ~ round(.x, 3))) %>%
+  arrange(desc(PIC))
 
-table_mg <- gridExtra::tableGrob(pic_mg, rows = NULL, theme = tt)
+mg_pic_results
 
-pdf("figures/pic_table_mount_graham.pdf", width = 8.5, height = 11)
-grid::grid.newpage()
-grid::grid.draw(
-  gridExtra::arrangeGrob(
-    title_mg, table_mg,
-    ncol = 1,
-    heights = c(0.3, 10.7)   # smaller title row = less whitespace
-  )
-)
-dev.off()
+write.csv(mg_pic_results, "tables/mg_pic_results.csv", row.names = FALSE)
 
 
 
-tt <- gridExtra::ttheme_default(base_size = 22)
+## PIC WM
 
-pic_wm <- pic_table_2 %>%
-  filter(site == "White Mountains") %>%
-  select(parameter, CVa, mean_CVw, PIC, eta2) %>%
-  mutate(parameter = gsub("_", " ", parameter)) %>%
-  rename(`Call property` = parameter)
 
-title_wm <- grid::textGrob(
-  "White Mountains Red Squirrels: PIC Summary by Acoustic Parameter",
-  gp = grid::gpar(fontsize = 16, fontface = "bold")
-)
+# White Mountains PIC table
+wm_pic_results <- calc_pic_full(call_avgs_wm_cleaned, params)
 
-table_wm <- gridExtra::tableGrob(pic_wm, rows = NULL, theme = tt)
+wm_pic_results <- wm_pic_results %>%
+  mutate(across(where(is.numeric), ~ round(.x, 3))) %>%
+  arrange(desc(PIC))
 
-pdf("figures/pic_table_white_mountains.pdf", width = 8.5, height = 11)
-grid::grid.newpage()
-grid::grid.draw(
-  gridExtra::arrangeGrob(
-    title_wm, table_wm,
-    ncol = 1,
-    heights = c(0.3, 10.7)
-  )
-)
-dev.off()
+wm_pic_results
 
+write.csv(wm_pic_results, "tables/wm_pic_results.csv", row.names = FALSE)
+
+
+
+## Statistical Significance (ANOVA & FDR)
+
+# Before relying on the ICC values, we must confirm that the variance among individuals is #statistically significant for each parameter. We run one-way ANOVAs for every acoustic #parameter by `sq_ID`. 
+# Because we are running 17 tests per population, we must control for Type #I error inflation (false positives) by applying the Benjamini-Hochberg False Discovery Rate ##(FDR) correction to our p-values.
+
+
+# ------------------------------------------------------------------------------
+# ANOVA & FDR Correction for Individual Distinctiveness
+# ------------------------------------------------------------------------------
+
+# Function to run ANOVAs and extract p-values for all parameters
+run_anovas <- function(df, params_list) {
+  p_values <- c()
+ 
+  for (p in params_list) {
+    # Skip non-acoustic parameters
+    if(p %in% c("no_notes", "call_duration")) next
+   
+    # Run a simple one-way ANOVA: parameter ~ sq_ID
+    formula <- as.formula(paste(p, "~ sq_ID"))
+    anova_res <- aov(formula, data = df)
+   
+    # Extract the p-value from the summary
+    summary_anova <- summary(anova_res)
+    p_val <- summary_anova[[1]][["Pr(>F)"]][1]
+   
+    p_values <- c(p_values, p_val)
+  }
+ 
+  # Return a dataframe with the raw p-values
+  return(data.frame(
+    parameter = params_list[!params_list %in% c("no_notes", "call_duration")],
+    raw_p_value = p_values
+  ))
+}
+
+# 1. Mount Graham Significance
+mg_anova_results <- run_anovas(call_avgs_mg, params)
+# Apply Benjamini-Hochberg (FDR) correction
+mg_anova_results$fdr_adjusted_p <- p.adjust(mg_anova_results$raw_p_value, method = "BH")
+# Mark significance (alpha = 0.05)
+mg_anova_results$significant <- ifelse(mg_anova_results$fdr_adjusted_p < 0.05, "Yes", "No")
+
+print("Mount Graham ANOVA & FDR Results:")
+print(mg_anova_results)
+
+# 2. White Mountains Significance
+wm_anova_results <- run_anovas(call_avgs_wm, params)
+# Apply Benjamini-Hochberg (FDR) correction
+wm_anova_results$fdr_adjusted_p <- p.adjust(wm_anova_results$raw_p_value, method = "BH")
+# Mark significance (alpha = 0.05)
+wm_anova_results$significant <- ifelse(wm_anova_results$fdr_adjusted_p < 0.05, "Yes", "No")
+
+print("White Mountains ANOVA & FDR Results:")
+print(wm_anova_results)
+
+# Save the significant results to your tables folder for reference
+write.csv(mg_anova_results, "tables/MG_ANOVA_FDR_Results.csv", row.names = FALSE)
+write.csv(wm_anova_results, "tables/WM_ANOVA_FDR_Results.csv", row.names = FALSE)
 ```
+
+## PCA/Hs Beechers Stat
+
+```{r}
+## Principal Components Analysis
+
+#Run separate Principal Components Analyses (PCA) for the Mount Graham and White Mountain squirrel populations to yield uncorrelated variables for Beecher's Information Statistic (Hs). Each is centered and scaled.
+
+
+# ---------------------------------------------------------
+# 1. MOUNT GRAHAM (MG) PCA
+# ---------------------------------------------------------
+
+# Filter specifically for Mount Graham squirrels and drop missing values
+mg_pca_data <- call_avgs_mg_cleaned %>%
+  dplyr::select(sq_ID, call_duration, note_rate, duration, break_s, disttomax,
+         rms, energy, peaktopeak, peak_freq_mean, peak_ampl_mean,
+         min_freq_mean, max_freq_mean, bandw_mean,
+         quart_25_mean, quart_50_mean, quart_75_mean, entropy_mean) %>%
+  drop_na()
+
+# Run the PCA on just Mount Graham data (excluding the sq_ID column from the math)
+mg.pc <- prcomp(~ call_duration + note_rate + duration + break_s + disttomax +
+                  rms + energy + peaktopeak + peak_freq_mean + peak_ampl_mean +
+                  min_freq_mean + max_freq_mean + bandw_mean +
+                  quart_25_mean + quart_50_mean + quart_75_mean + entropy_mean,
+                data=mg_pca_data, center=TRUE, scale=TRUE)
+
+# Display a summary of the Mount Graham PCA results
+summary(mg.pc)
+
+# Extract and format the Loadings for MG
+mg.load <- as.data.frame(mg.pc$rotation[,1:17])
+
+# Extract importance stats (Standard Deviation & Variance) and append to Loadings
+mg.pc.sum <- summary(mg.pc)[["importance"]]
+mg.pc.sum <- rbind('Variance' = mg.pc.sum["Standard deviation",]^2, mg.pc.sum)
+mg.load <- rbind(mg.load, mg.pc.sum[,1:17])
+
+# Save Mount Graham Loadings to a CSV
+write.csv(mg.load, file="tables/MG_Squirrel_PCA_Loadings.csv", row.names = TRUE)
+
+# ---------------------------------------------------------
+# MAKE MOUNT GRAHAM PCA TRANSFORMED DATA SET
+# ---------------------------------------------------------
+
+# For Mount Graham squirrels, we will retain the first 14 PCs which explain >99%
+# of the variation (specifically, first 14 PCs explain 99.2%)
+mg_scores_99 <- data.frame(mg.pc$x[, 1:14])
+mg_scores_99$sq_ID <- mg_pca_data$sq_ID
+
+# We will also save another data set retaining only PCs with SDs > 1
+# (in this case it is the first 4 PCs). Together these PCs explain 77.8% of the variation.
+mg_scores_sd1 <- data.frame(mg.pc$x[, 1:4])
+mg_scores_sd1$sq_ID <- mg_pca_data$sq_ID
+
+# Finally, save third data set that retains enough PC's to explain at least 95%
+# of the variation (first 11 PCs explain 96.8%)
+mg_scores_95 <- data.frame(mg.pc$x[, 1:11])
+mg_scores_95$sq_ID <- mg_pca_data$sq_ID
+
+
+
+# ---------------------------------------------------------
+# 2. WHITE MOUNTAINS (WM) PCA
+# ---------------------------------------------------------
+
+# Filter specifically for White Mountain squirrels and drop missing values
+wm_pca_data <- call_avgs_wm_cleaned %>%
+  dplyr::select(sq_ID, call_duration, note_rate, duration, break_s, disttomax,
+         rms, energy, peaktopeak, peak_freq_mean, peak_ampl_mean,
+         min_freq_mean, max_freq_mean, bandw_mean,
+         quart_25_mean, quart_50_mean, quart_75_mean, entropy_mean) %>%
+  drop_na()
+
+# Run the PCA on just White Mountain data (excluding the sq_ID column from the math)
+wm.pc <- prcomp(~ call_duration + note_rate + duration + break_s + disttomax +
+                  rms + energy + peaktopeak + peak_freq_mean + peak_ampl_mean +
+                  min_freq_mean + max_freq_mean + bandw_mean +
+                  quart_25_mean + quart_50_mean + quart_75_mean + entropy_mean,
+                data=wm_pca_data, center=TRUE, scale=TRUE)
+
+# Display a summary of the White Mountain PCA results
+summary(wm.pc)
+
+# Extract and format the Loadings for WM
+wm.load <- as.data.frame(wm.pc$rotation[,1:17])
+
+# Extract importance stats (Standard Deviation & Variance) and append to Loadings
+wm.pc.sum <- summary(wm.pc)[["importance"]]
+wm.pc.sum <- rbind('Variance' = wm.pc.sum["Standard deviation",]^2, wm.pc.sum)
+wm.load <- rbind(wm.load, wm.pc.sum[,1:17])
+
+# Save White Mountain Loadings to a CSV
+write.csv(wm.load, file="tables/WM_Squirrel_PCA_Loadings.csv", row.names = TRUE)
+
+# ---------------------------------------------------------
+# MAKE WHITE MOUNTAINS PCA TRANSFORMED DATA SET
+# ---------------------------------------------------------
+
+# For White Mountains squirrels, we will retain the first 14 PCs which explain >99%
+# of the variation (specifically, first 14 PCs explain 99.3%)
+wm_scores_99 <- data.frame(wm.pc$x[, 1:14])
+wm_scores_99$sq_ID <- wm_pca_data$sq_ID
+
+# We will also save another data set retaining only PCs with SDs > 1
+# (in this case it is the first 4 PCs). Together these PCs explain 80.0% of the variation.
+wm_scores_sd1 <- data.frame(wm.pc$x[, 1:4])
+wm_scores_sd1$sq_ID <- wm_pca_data$sq_ID
+
+# Finally, save third data set that retains enough PC's to explain at least 95%
+# of the variation (first 11 PCs explain 96.3%)
+wm_scores_95 <- data.frame(wm.pc$x[, 1:11])
+wm_scores_95$sq_ID <- wm_pca_data$sq_ID
+
+
 
 ## Hs (Beechers stat)
 
-Check to see if there is any recording bias by distance. Plot distance = x and parameter = y for every parameter for each population. Then compute Hs beechers stat.
+## Beecher's Hs Output
+
+# Calculate Beecher's Information Statistic (Hs) using the three separate PCA datasets. We run ANOVAs for each Principal Component and sum the individual identity information (Hi) to yield the final Hs statistic for each population.
+
+### Beecher's Hs: >99% Variation Dataset
+
+
+# ---------------------------------------------------------
+# MOUNT GRAHAM Hs (>99%)
+# ---------------------------------------------------------
+
+# Ensure sq_ID is a factor for the ANOVA
+mg_scores_99$sq_ID <- as.factor(mg_scores_99$sq_ID)
+
+# Create empty vector to hold Hi values
+mg_H_99 <- vector()
+
+# Loop through all PC columns (excluding the last column, which is sq_ID)
+for(i in 1:(ncol(mg_scores_99)-1)){
+  # Run ANOVA of PC score predicted by individual Squirrel ID
+  fit2 <- aov(mg_scores_99[,i] ~ sq_ID, data=mg_scores_99)
+  # Extract the F-statistic from the ANOVA summary
+  F_stat <- summary(fit2)[[1]][["F value"]][1]
+  # Get number of unique individuals (n)
+  n <- length(levels(mg_scores_99$sq_ID))
+ 
+  # Calculate Hi using Beecher's formula.
+  # Note: if F_stat is less than 1, we set it to 1 to prevent getting NaNs from log2 of negative numbers
+  F_safe <- ifelse(F_stat < 1, 1, F_stat)
+  Hi <- log2(sqrt((F_safe + n - 1) / n))
+  mg_H_99[i] <- Hi
+}
+
+# Sum the Hi values to get total Hs
+mg_Hs_99 <- sum(mg_H_99)
+print(paste("Mount Graham Hs (>99% Var) =", round(mg_Hs_99, 2)))
+
+
+# ---------------------------------------------------------
+# WHITE MOUNTAINS Hs (>99%)
+# ---------------------------------------------------------
+
+wm_scores_99$sq_ID <- as.factor(wm_scores_99$sq_ID)
+wm_H_99 <- vector()
+
+for(i in 1:(ncol(wm_scores_99)-1)){
+  fit2 <- aov(wm_scores_99[,i] ~ sq_ID, data=wm_scores_99)
+  F_stat <- summary(fit2)[[1]][["F value"]][1]
+  n <- length(levels(wm_scores_99$sq_ID))
+ 
+  F_safe <- ifelse(F_stat < 1, 1, F_stat)
+  Hi <- log2(sqrt((F_safe + n - 1) / n))
+  wm_H_99[i] <- Hi
+}
+
+wm_Hs_99 <- sum(wm_H_99)
+print(paste("White Mountains Hs (>99% Var) =", round(wm_Hs_99, 2)))
+
+
+
+### Beecher's Hs: Kaiser's Rule (SD > 1) Dataset
+
+
+# ---------------------------------------------------------
+# MOUNT GRAHAM Hs (SD > 1)
+# ---------------------------------------------------------
+
+mg_scores_sd1$sq_ID <- as.factor(mg_scores_sd1$sq_ID)
+mg_H_sd1 <- vector()
+
+for(i in 1:(ncol(mg_scores_sd1)-1)){
+  fit2 <- aov(mg_scores_sd1[,i] ~ sq_ID, data=mg_scores_sd1)
+  F_stat <- summary(fit2)[[1]][["F value"]][1]
+  n <- length(levels(mg_scores_sd1$sq_ID))
+ 
+  F_safe <- ifelse(F_stat < 1, 1, F_stat)
+  Hi <- log2(sqrt((F_safe + n - 1) / n))
+  mg_H_sd1[i] <- Hi
+}
+
+mg_Hs_sd1 <- sum(mg_H_sd1)
+print(paste("Mount Graham Hs (SD > 1) =", round(mg_Hs_sd1, 2)))
+
+
+# ---------------------------------------------------------
+# WHITE MOUNTAINS Hs (SD > 1)
+# ---------------------------------------------------------
+
+wm_scores_sd1$sq_ID <- as.factor(wm_scores_sd1$sq_ID)
+wm_H_sd1 <- vector()
+
+for(i in 1:(ncol(wm_scores_sd1)-1)){
+  fit2 <- aov(wm_scores_sd1[,i] ~ sq_ID, data=wm_scores_sd1)
+  F_stat <- summary(fit2)[[1]][["F value"]][1]
+  n <- length(levels(wm_scores_sd1$sq_ID))
+ 
+  F_safe <- ifelse(F_stat < 1, 1, F_stat)
+  Hi <- log2(sqrt((F_safe + n - 1) / n))
+  wm_H_sd1[i] <- Hi
+}
+
+wm_Hs_sd1 <- sum(wm_H_sd1)
+print(paste("White Mountains Hs (SD > 1) =", round(wm_Hs_sd1, 2)))
+
+
+
+### Beecher's Hs: >95% Variation Dataset
+
+
+# ---------------------------------------------------------
+# MOUNT GRAHAM Hs (>95%)
+# ---------------------------------------------------------
+
+mg_scores_95$sq_ID <- as.factor(mg_scores_95$sq_ID)
+mg_H_95 <- vector()
+
+for(i in 1:(ncol(mg_scores_95)-1)){
+  fit2 <- aov(mg_scores_95[,i] ~ sq_ID, data=mg_scores_95)
+  F_stat <- summary(fit2)[[1]][["F value"]][1]
+  n <- length(levels(mg_scores_95$sq_ID))
+ 
+  F_safe <- ifelse(F_stat < 1, 1, F_stat)
+  Hi <- log2(sqrt((F_safe + n - 1) / n))
+  mg_H_95[i] <- Hi
+}
+
+mg_Hs_95 <- sum(mg_H_95)
+print(paste("Mount Graham Hs (>95% Var) =", round(mg_Hs_95, 2)))
+
+
+# ---------------------------------------------------------
+# WHITE MOUNTAINS Hs (>95%)
+# ---------------------------------------------------------
+
+wm_scores_95$sq_ID <- as.factor(wm_scores_95$sq_ID)
+wm_H_95 <- vector()
+
+for(i in 1:(ncol(wm_scores_95)-1)){
+  fit2 <- aov(wm_scores_95[,i] ~ sq_ID, data=wm_scores_95)
+  F_stat <- summary(fit2)[[1]][["F value"]][1]
+  n <- length(levels(wm_scores_95$sq_ID))
+ 
+  F_safe <- ifelse(F_stat < 1, 1, F_stat)
+  Hi <- log2(sqrt((F_safe + n - 1) / n))
+  wm_H_95[i] <- Hi
+}
+
+wm_Hs_95 <- sum(wm_H_95)
+print(paste("White Mountains Hs (>95% Var) =", round(wm_Hs_95, 2)))
+```
+
+## Linear Discriminat Analysis LDA
+
+```         
+```
 
 ```{r}
-# Hs (Beecher's information statistic) 
-# calculate Hs (in bits) for each acoustic parameter, separately for MG and WM
+## Linear Discriminant Analysis (LDA)
 
-# function: compute Beecher's Hs for ONE parameter in MG calls
-calc_Hs_one_parameter_MG <- function(parameter) {
+#Run a Linear Discriminant Analysis (LDA) on the PCA scores to test classification success.
+#First, we run the LDA on the full populations for all three datasets to extract singular values, scaling, and overall classification success via Leave-One-Out Cross Validation (CV=TRUE). Then we run it on groups of 5 individuals to control for baseline probability differences caused by unequal population sizes.
 
-  hs_model_MG <- lme4::lmer(
-    stats::as.formula(paste0(parameter, " ~ 1 + (1 | sq_ID)")),
-    data = call_avgs_mg,
-    REML = TRUE
-  )
+{warning=FALSE}
+# Load the MASS package which contains the lda() function
+library(MASS)
 
-  hs_variance_MG <- as.data.frame(lme4::VarCorr(hs_model_MG))
+# =========================================================
+# MOUNT GRAHAM (MG) FULL LDA
+# =========================================================
 
-  var_among_squirrels <- hs_variance_MG$vcov[hs_variance_MG$grp == "sq_ID"]
-  var_within_squirrels <- hs_variance_MG$vcov[hs_variance_MG$grp == "Residual"]
+# ---------------------------------------------------------
+# MG: >99% Variation Dataset (14 PCs)
+# ---------------------------------------------------------
+mg.dfa_99 <- lda(sq_ID ~., mg_scores_99)
 
-  Hs <- log2((var_among_squirrels + var_within_squirrels) / var_within_squirrels)
+print("MG (>99% Var) Scaling of PCs on linear discriminants (first 8):")
+round(as.data.frame(mg.dfa_99$scaling)[1:8], 2)
 
-  tibble::tibble(
-    site = "MG",
-    parameter = parameter,
-    var_among_squirrels = var_among_squirrels,
-    var_within_squirrels = var_within_squirrels,
-    Hs = Hs
-  )
+print("MG (>99% Var) Singular values of linear discriminants:")
+mg.dfa_99$svd
+
+# Make data frame of scaling and singular values plus proportion of trace
+mg.dfa_99.scale <- rbind(as.data.frame(mg.dfa_99$scaling), 'svd'=mg.dfa_99$svd,
+                         'prop_trace'=mg.dfa_99$svd^2/sum(mg.dfa_99$svd^2),
+                         'cumprop_trace'=cumsum(mg.dfa_99$svd^2)/sum(mg.dfa_99$svd^2))
+
+# CV=TRUE tells it to do leave-one-out cross validation
+mg.dfa_99CV <- lda(sq_ID ~., mg_scores_99, CV=TRUE)
+match <- ifelse(mg.dfa_99CV$class==mg_scores_99$sq_ID, 1, 0)
+score <- sum(match)/length(mg.dfa_99CV$class)*100
+print(paste("MG (>99% Var) % classification success =", round(score, 2)))
+
+# Create data frame of classification for each call
+mg.class_99 <- data.frame(mg_scores_99$sq_ID)
+mg.class_99$class <- mg.dfa_99CV$class
+colnames(mg.class_99) <- c("ID", "class")
+mg.class_99$score <- ifelse(mg.class_99$ID == mg.class_99$class, 1, 0)
+mg.class_99$species <- "MG"
+
+# ---------------------------------------------------------
+# MG: SD > 1 Dataset (4 PCs)
+# ---------------------------------------------------------
+mg.dfa_sd1 <- lda(sq_ID ~., mg_scores_sd1)
+
+print("MG (SD > 1) Scaling of PCs on linear discriminants:")
+round(as.data.frame(mg.dfa_sd1$scaling), 2)
+
+print("MG (SD > 1) Singular values of linear discriminants:")
+mg.dfa_sd1$svd
+
+mg.dfa_sd1.scale <- rbind(as.data.frame(mg.dfa_sd1$scaling), 'svd'=mg.dfa_sd1$svd,
+                         'prop_trace'=mg.dfa_sd1$svd^2/sum(mg.dfa_sd1$svd^2),
+                         'cumprop_trace'=cumsum(mg.dfa_sd1$svd^2)/sum(mg.dfa_sd1$svd^2))
+
+mg.dfa_sd1CV <- lda(sq_ID ~., mg_scores_sd1, CV=TRUE)
+match <- ifelse(mg.dfa_sd1CV$class==mg_scores_sd1$sq_ID, 1, 0)
+score <- sum(match)/length(mg.dfa_sd1CV$class)*100
+print(paste("MG (SD > 1) % classification success =", round(score, 2)))
+
+mg.class_sd1 <- data.frame(mg_scores_sd1$sq_ID)
+mg.class_sd1$class <- mg.dfa_sd1CV$class
+colnames(mg.class_sd1) <- c("ID", "class")
+mg.class_sd1$score <- ifelse(mg.class_sd1$ID == mg.class_sd1$class, 1, 0)
+mg.class_sd1$species <- "MG"
+
+# ---------------------------------------------------------
+# MG: >95% Variation Dataset (11 PCs)
+# ---------------------------------------------------------
+mg.dfa_95 <- lda(sq_ID ~., mg_scores_95)
+
+print("MG (>95% Var) Scaling of PCs on linear discriminants (first 8):")
+round(as.data.frame(mg.dfa_95$scaling)[1:8], 2)
+
+print("MG (>95% Var) Singular values of linear discriminants:")
+mg.dfa_95$svd
+
+mg.dfa_95.scale <- rbind(as.data.frame(mg.dfa_95$scaling), 'svd'=mg.dfa_95$svd,
+                         'prop_trace'=mg.dfa_95$svd^2/sum(mg.dfa_95$svd^2),
+                         'cumprop_trace'=cumsum(mg.dfa_95$svd^2)/sum(mg.dfa_95$svd^2))
+
+mg.dfa_95CV <- lda(sq_ID ~., mg_scores_95, CV=TRUE)
+match <- ifelse(mg.dfa_95CV$class==mg_scores_95$sq_ID, 1, 0)
+score <- sum(match)/length(mg.dfa_95CV$class)*100
+print(paste("MG (>95% Var) % classification success =", round(score, 2)))
+
+mg.class_95 <- data.frame(mg_scores_95$sq_ID)
+mg.class_95$class <- mg.dfa_95CV$class
+colnames(mg.class_95) <- c("ID", "class")
+mg.class_95$score <- ifelse(mg.class_95$ID == mg.class_95$class, 1, 0)
+mg.class_95$species <- "MG"
+
+
+# =========================================================
+# WHITE MOUNTAINS (WM) FULL LDA
+# =========================================================
+
+# ---------------------------------------------------------
+# WM: >99% Variation Dataset (14 PCs)
+# ---------------------------------------------------------
+wm.dfa_99 <- lda(sq_ID ~., wm_scores_99)
+
+print("WM (>99% Var) Scaling of PCs on linear discriminants (first 8):")
+round(as.data.frame(wm.dfa_99$scaling)[1:8], 2)
+
+print("WM (>99% Var) Singular values of linear discriminants:")
+wm.dfa_99$svd
+
+wm.dfa_99.scale <- rbind(as.data.frame(wm.dfa_99$scaling), 'svd'=wm.dfa_99$svd,
+                         'prop_trace'=wm.dfa_99$svd^2/sum(wm.dfa_99$svd^2),
+                         'cumprop_trace'=cumsum(wm.dfa_99$svd^2)/sum(wm.dfa_99$svd^2))
+
+wm.dfa_99CV <- lda(sq_ID ~., wm_scores_99, CV=TRUE)
+match <- ifelse(wm.dfa_99CV$class==wm_scores_99$sq_ID, 1, 0)
+score <- sum(match)/length(wm.dfa_99CV$class)*100
+print(paste("WM (>99% Var) % classification success =", round(score, 2)))
+
+wm.class_99 <- data.frame(wm_scores_99$sq_ID)
+wm.class_99$class <- wm.dfa_99CV$class
+colnames(wm.class_99) <- c("ID", "class")
+wm.class_99$score <- ifelse(wm.class_99$ID == wm.class_99$class, 1, 0)
+wm.class_99$species <- "WM"
+
+# ---------------------------------------------------------
+# WM: SD > 1 Dataset (4 PCs)
+# ---------------------------------------------------------
+wm.dfa_sd1 <- lda(sq_ID ~., wm_scores_sd1)
+
+print("WM (SD > 1) Scaling of PCs on linear discriminants:")
+round(as.data.frame(wm.dfa_sd1$scaling), 2)
+
+print("WM (SD > 1) Singular values of linear discriminants:")
+wm.dfa_sd1$svd
+
+wm.dfa_sd1.scale <- rbind(as.data.frame(wm.dfa_sd1$scaling), 'svd'=wm.dfa_sd1$svd,
+                         'prop_trace'=wm.dfa_sd1$svd^2/sum(wm.dfa_sd1$svd^2),
+                         'cumprop_trace'=cumsum(wm.dfa_sd1$svd^2)/sum(wm.dfa_sd1$svd^2))
+
+wm.dfa_sd1CV <- lda(sq_ID ~., wm_scores_sd1, CV=TRUE)
+match <- ifelse(wm.dfa_sd1CV$class==wm_scores_sd1$sq_ID, 1, 0)
+score <- sum(match)/length(wm.dfa_sd1CV$class)*100
+print(paste("WM (SD > 1) % classification success =", round(score, 2)))
+
+wm.class_sd1 <- data.frame(wm_scores_sd1$sq_ID)
+wm.class_sd1$class <- wm.dfa_sd1CV$class
+colnames(wm.class_sd1) <- c("ID", "class")
+wm.class_sd1$score <- ifelse(wm.class_sd1$ID == wm.class_sd1$class, 1, 0)
+wm.class_sd1$species <- "WM"
+
+# ---------------------------------------------------------
+# WM: >95% Variation Dataset (11 PCs)
+# ---------------------------------------------------------
+wm.dfa_95 <- lda(sq_ID ~., wm_scores_95)
+
+print("WM (>95% Var) Scaling of PCs on linear discriminants (first 8):")
+round(as.data.frame(wm.dfa_95$scaling)[1:8], 2)
+
+print("WM (>95% Var) Singular values of linear discriminants:")
+wm.dfa_95$svd
+
+wm.dfa_95.scale <- rbind(as.data.frame(wm.dfa_95$scaling), 'svd'=wm.dfa_95$svd,
+                         'prop_trace'=wm.dfa_95$svd^2/sum(wm.dfa_95$svd^2),
+                         'cumprop_trace'=cumsum(wm.dfa_95$svd^2)/sum(wm.dfa_95$svd^2))
+
+wm.dfa_95CV <- lda(sq_ID ~., wm_scores_95, CV=TRUE)
+match <- ifelse(wm.dfa_95CV$class==wm_scores_95$sq_ID, 1, 0)
+score <- sum(match)/length(wm.dfa_95CV$class)*100
+print(paste("WM (>95% Var) % classification success =", round(score, 2)))
+
+wm.class_95 <- data.frame(wm_scores_95$sq_ID)
+wm.class_95$class <- wm.dfa_95CV$class
+colnames(wm.class_95) <- c("ID", "class")
+wm.class_95$score <- ifelse(wm.class_95$ID == wm.class_95$class, 1, 0)
+wm.class_95$species <- "WM"
+
+
+# =========================================================
+# LDA ON GROUPS OF 5 INDIVIDUALS
+# =========================================================
+# Run leave-one-out cross validation on 100 randomly selected groups of five
+# individuals, return mean and range of classification success
+
+# ---------------------------------------------------------
+# MOUNT GRAHAM LDA (Groups of 5)
+# ---------------------------------------------------------
+
+### MG: >99% Variation Dataset (14 PCs)
+mg_correct_99 <- vector()
+for (i in 1:100){
+  IDs <- sample(levels(mg_scores_99$sq_ID), 5, replace=FALSE)
+  pcscores_sample <- mg_scores_99[mg_scores_99$sq_ID %in% IDs,]
+  pcscores_sample$sq_ID <- factor(pcscores_sample$sq_ID)
+ 
+  dfa_sample <- lda(sq_ID ~., pcscores_sample, CV=TRUE)
+ 
+  match_sample <- ifelse(dfa_sample$class == pcscores_sample$sq_ID, 1, 0)
+  score <- sum(match_sample) / length(dfa_sample$class) * 100
+  mg_correct_99[i] <- score
 }
+print(paste("MG (>99% Var - Groups of 5) mean % success =", round(mean(mg_correct_99), 2)))
+print(paste("MG (>99% Var - Groups of 5) range =", round(min(mg_correct_99), 2), "-", round(max(mg_correct_99), 2)))
 
-# function: compute Beecher's Hs for ONE parameter in WM calls
-calc_Hs_one_parameter_WM <- function(parameter) {
-
-  hs_model_WM <- lme4::lmer(
-    stats::as.formula(paste0(parameter, " ~ 1 + (1 | sq_ID)")),
-    data = call_avgs_wm,
-    REML = TRUE
-  )
-
-  hs_variance_WM <- as.data.frame(lme4::VarCorr(hs_model_WM))
-
-  var_among_squirrels <- hs_variance_WM$vcov[hs_variance_WM$grp == "sq_ID"]
-  var_within_squirrels <- hs_variance_WM$vcov[hs_variance_WM$grp == "Residual"]
-
-  Hs <- log2((var_among_squirrels + var_within_squirrels) / var_within_squirrels)
-
-  tibble::tibble(
-    site = "WM",
-    parameter = parameter,
-    var_among_squirrels = var_among_squirrels,
-    var_within_squirrels = var_within_squirrels,
-    Hs = Hs
-  )
+### MG: SD > 1 Dataset (4 PCs)
+mg_correct_sd1 <- vector()
+for (i in 1:100){
+  IDs <- sample(levels(mg_scores_sd1$sq_ID), 5, replace=FALSE)
+  pcscores_sample <- mg_scores_sd1[mg_scores_sd1$sq_ID %in% IDs,]
+  pcscores_sample$sq_ID <- factor(pcscores_sample$sq_ID)
+ 
+  dfa_sample <- lda(sq_ID ~., pcscores_sample, CV=TRUE)
+ 
+  match_sample <- ifelse(dfa_sample$class == pcscores_sample$sq_ID, 1, 0)
+  score <- sum(match_sample) / length(dfa_sample$class) * 100
+  mg_correct_sd1[i] <- score
 }
+print(paste("MG (SD > 1 - Groups of 5) mean % success =", round(mean(mg_correct_sd1), 2)))
+print(paste("MG (SD > 1 - Groups of 5) range =", round(min(mg_correct_sd1), 2), "-", round(max(mg_correct_sd1), 2)))
 
-# run Hs for all parameters (MG)
-Hs_table_MG <- purrr::map_dfr(params, calc_Hs_one_parameter_MG)
-
-# run Hs for all parameters (WM)
-Hs_table_WM <- purrr::map_dfr(params, calc_Hs_one_parameter_WM)
-
-# combine MG + WM into one table
-Hs_table <- bind_rows(Hs_table_MG, Hs_table_WM)
-
-# round 2 decimals
-Hs_table_clean <- Hs_table %>%
-  mutate(
-    Hs = round(Hs, 2),
-    var_among_squirrels = round(var_among_squirrels, 6),
-    var_within_squirrels = round(var_within_squirrels, 6)
-  )
-
-# view final table
-Hs_table_clean
-write_csv(Hs_table_clean, "tables/Hs_table_clean.csv")
+### MG: >95% Variation Dataset (11 PCs)
+mg_correct_95 <- vector()
+for (i in 1:100){
+  IDs <- sample(levels(mg_scores_95$sq_ID), 5, replace=FALSE)
+  pcscores_sample <- mg_scores_95[mg_scores_95$sq_ID %in% IDs,]
+  pcscores_sample$sq_ID <- factor(pcscores_sample$sq_ID)
+ 
+  dfa_sample <- lda(sq_ID ~., pcscores_sample, CV=TRUE)
+ 
+  match_sample <- ifelse(dfa_sample$class == pcscores_sample$sq_ID, 1, 0)
+  score <- sum(match_sample) / length(dfa_sample$class) * 100
+  mg_correct_95[i] <- score
+}
+print(paste("MG (>95% Var - Groups of 5) mean % success =", round(mean(mg_correct_95), 2)))
+print(paste("MG (>95% Var - Groups of 5) range =", round(min(mg_correct_95), 2), "-", round(max(mg_correct_95), 2)))
 
 
-# Create a more presentable table splitting each population up.
+# ---------------------------------------------------------
+# WHITE MOUNTAINS LDA (Groups of 5)
+# ---------------------------------------------------------
 
+### WM: >99% Variation Dataset (14 PCs)
+wm_correct_99 <- vector()
+for (i in 1:100){
+  IDs <- sample(levels(wm_scores_99$sq_ID), 5, replace=FALSE)
+  pcscores_sample <- wm_scores_99[wm_scores_99$sq_ID %in% IDs,]
+  pcscores_sample$sq_ID <- factor(pcscores_sample$sq_ID)
+ 
+  dfa_sample <- lda(sq_ID ~., pcscores_sample, CV=TRUE)
+ 
+  match_sample <- ifelse(dfa_sample$class == pcscores_sample$sq_ID, 1, 0)
+  score <- sum(match_sample) / length(dfa_sample$class) * 100
+  wm_correct_99[i] <- score
+}
+print(paste("WM (>99% Var - Groups of 5) mean % success =", round(mean(wm_correct_99), 2)))
+print(paste("WM (>99% Var - Groups of 5) range =", round(min(wm_correct_99), 2), "-", round(max(wm_correct_99), 2)))
 
+### WM: SD > 1 Dataset (4 PCs)
+wm_correct_sd1 <- vector()
+for (i in 1:100){
+  IDs <- sample(levels(wm_scores_sd1$sq_ID), 5, replace=FALSE)
+  pcscores_sample <- wm_scores_sd1[wm_scores_sd1$sq_ID %in% IDs,]
+  pcscores_sample$sq_ID <- factor(pcscores_sample$sq_ID)
+ 
+  dfa_sample <- lda(sq_ID ~., pcscores_sample, CV=TRUE)
+ 
+  match_sample <- ifelse(dfa_sample$class == pcscores_sample$sq_ID, 1, 0)
+  score <- sum(match_sample) / length(dfa_sample$class) * 100
+  wm_correct_sd1[i] <- score
+}
+print(paste("WM (SD > 1 - Groups of 5) mean % success =", round(mean(wm_correct_sd1), 2)))
+print(paste("WM (SD > 1 - Groups of 5) range =", round(min(wm_correct_sd1), 2), "-", round(max(wm_correct_sd1), 2)))
 
-tt <- gridExtra::ttheme_default(base_size = 20)
-
-# make a readable version (full site names + nicer parameter text)
-Hs_table_clean_2 <- Hs_table_clean %>%
-  mutate(
-    site = case_when(
-      site == "MG" ~ "Mount Graham",
-      site == "WM" ~ "White Mountains",
-      TRUE ~ site
-    ),
-    parameter = gsub("_", " ", parameter)
-  )
-
-# --- Mount Graham Hs table ---
-Hs_mg <- Hs_table_clean_2 %>%
-  filter(site == "Mount Graham") %>%
-  select(parameter, Hs, var_among_squirrels, var_within_squirrels) %>%
-  rename(`Call property` = parameter,
-         `Var among squirrels` = var_among_squirrels,
-         `Var within squirrels` = var_within_squirrels)
-
-title_hs_mg <- grid::textGrob(
-  "Mount Graham Red Squirrels: Beecher's Hs by Acoustic Parameter",
-  gp = grid::gpar(fontsize = 16, fontface = "bold")
-)
-
-table_hs_mg <- gridExtra::tableGrob(Hs_mg, rows = NULL, theme = tt)
-
-pdf("figures/hs_table_mount_graham.pdf", width = 8.5, height = 11)
-grid::grid.newpage()
-grid::grid.draw(gridExtra::arrangeGrob(title_hs_mg, table_hs_mg, ncol = 1, heights = c(0.3, 10.7)))
-dev.off()
-
-# --- White Mountains Hs table ---
-Hs_wm <- Hs_table_clean_2 %>%
-  filter(site == "White Mountains") %>%
-  select(parameter, Hs, var_among_squirrels, var_within_squirrels) %>%
-  rename(`Call property` = parameter,
-         `Var among squirrels` = var_among_squirrels,
-         `Var within squirrels` = var_within_squirrels)
-
-title_hs_wm <- grid::textGrob(
-  "White Mountains Red Squirrels: Beecher's Hs by Acoustic Parameter",
-  gp = grid::gpar(fontsize = 16, fontface = "bold")
-)
-
-table_hs_wm <- gridExtra::tableGrob(Hs_wm, rows = NULL, theme = tt)
-
-pdf("figures/hs_table_white_mountains.pdf", width = 8.5, height = 11)
-grid::grid.newpage()
-grid::grid.draw(gridExtra::arrangeGrob(title_hs_wm, table_hs_wm, ncol = 1, heights = c(0.3, 10.7)))
-dev.off()
-
-# make a comparizon figure that shows comparison between wm Hs and mg Hs
-# Bar graph. MG vs WM side-by-side for each parameter
-p_hs_bar <- Hs_table_clean_2 %>%
-  ggplot(aes(x = parameter, y = Hs, fill = site)) +
-  geom_col(position = position_dodge(width = 0.8), width = 0.7) +
-  coord_flip() +
-  scale_fill_manual(values = c("Mount Graham" = "#0072B2",  # blue
-                               "White Mountains" = "#E69F00")) + # orange
-  labs(
-    title = "Beecher's Hs by acoustic parameter (MG vs WM)",
-    x = NULL,
-    y = "Hs (bits)",
-    fill = "Population"
-  ) +
-  theme_bw() +
-  theme(
-    legend.position = "top",
-    plot.title = element_text(face = "bold", size = 18),
-    
-    # axis tick labels (more readable)
-    axis.text.y = element_text(size = 14),  # parameter names
-    axis.text.x = element_text(size = 14),  # Hs tick numbers
-    
-    # axis titles
-    axis.title.x = element_text(size = 16), # this is "Hs (bits)" after coord_flip()
-    axis.title.y = element_text(size = 16),
-    
-    # optional: legend text/title sizes to match
-    legend.title = element_text(size = 14),
-    legend.text  = element_text(size = 13)
-  )
-
-p_hs_bar
-
-ggsave("figures/hs_compare_bar.png", plot = p_hs_bar, width = 10, height = 7, dpi = 300)
-
+### WM: >95% Variation Dataset (11 PCs)
+wm_correct_95 <- vector()
+for (i in 1:100){
+  IDs <- sample(levels(wm_scores_95$sq_ID), 5, replace=FALSE)
+  pcscores_sample <- wm_scores_95[wm_scores_95$sq_ID %in% IDs,]
+  pcscores_sample$sq_ID <- factor(pcscores_sample$sq_ID)
+ 
+  dfa_sample <- lda(sq_ID ~., pcscores_sample, CV=TRUE)
+ 
+  match_sample <- ifelse(dfa_sample$class == pcscores_sample$sq_ID, 1, 0)
+  score <- sum(match_sample) / length(dfa_sample$class) * 100
+  wm_correct_95[i] <- score
+}
+print(paste("WM (>95% Var - Groups of 5) mean % success =", round(mean(wm_correct_95), 2)))
+print(paste("WM (>95% Var - Groups of 5) range =", round(min(wm_correct_95), 2), "-", round(max(wm_correct_95), 2)))
 
 ```
 
-## Create fake forshadowing plots
+## LDA Plots
 
-```         
+```{r}
+# LDA Classification Plots
+
+### Mount Graham
+
+# Select 5 random individuals and plot in 1st 2 dimensions of linear discriminant analysis. Re-run to resample and plot 5 new individuals.
+
+
+library(ggplot2)
+library(lme4)
+library(lmtest)
+library(wesanderson)
+# ---------------------------------------------------------
+# MOUNT GRAHAM LDA Plot (Faceted 4-Iteration Resampling)
+# ---------------------------------------------------------
+# Run 4 iterations of resampling 5 individuals and bind the results together
+
+# Initialize empty lists to store iteration data
+mg_dfa_list <- list()
+mg_centroids_list <- list()
+
+for (i in 1:4) {
+  # Resample and predict
+  IDs_mg <- sample(levels(mg_scores_99$sq_ID), 5, replace=FALSE)
+  pcscores_sample_mg <- mg_scores_99[mg_scores_99$sq_ID %in% IDs_mg,]
+  pcscores_sample_mg$sq_ID <- factor(pcscores_sample_mg$sq_ID)
+ 
+  dfa_sample_mg <- lda(sq_ID ~., pcscores_sample_mg)
+  p.dfa_mg <- predict(object = dfa_sample_mg, newdata = pcscores_sample_mg)
+
+  # Save results and add an iteration label for faceting
+  dfa_results <- data.frame(sq_ID = pcscores_sample_mg[,"sq_ID"], lda = p.dfa_mg$x)
+  dfa_results$Iteration <- paste("Iteration", i)
+ 
+  # create a local 1-5 index so the 5-color palette scales correctly out of 20 possible IDs
+  dfa_results$Local_ID <- factor(as.numeric(factor(dfa_results$sq_ID)))
+ 
+  centroids <- aggregate(cbind(lda.LD1, lda.LD2) ~ Local_ID, dfa_results, mean)
+  centroids$Iteration <- paste("Iteration", i)
+ 
+  mg_dfa_list[[i]] <- dfa_results
+  mg_centroids_list[[i]] <- centroids
+}
+
+# Bind lists into full data frames
+mg_dfa_all <- do.call(rbind, mg_dfa_list)
+mg_centroids_all <- do.call(rbind, mg_centroids_list)
+
+# Generate Faceted Plot
+ggplot(mg_dfa_all, aes(x = lda.LD1, y = lda.LD2, colour=Local_ID)) +
+  geom_point(size = 0.5) +
+  stat_ellipse(level=0.95, size=0.4) +
+  geom_point(data=mg_centroids_all, aes(fill=Local_ID), size=2, pch=21, colour="black") +
+  scale_colour_manual(values = wes_palette("Darjeeling1", n = 5, type = "discrete")) +
+  scale_fill_manual(values = wes_palette("Darjeeling1", n = 5, type = "discrete")) +
+  facet_wrap(~Iteration, scales = "free") +
+  theme_bw() +
+  ggtitle("Mount Graham") +
+  xlab("Linear Discriminant 1") +
+  ylab("Linear Discriminant 2") +
+  theme(legend.position = "none", panel.grid = element_blank(),
+        plot.title = element_text(face="bold", hjust=0.5), axis.text = element_text(size=6),
+        strip.text = element_blank(), strip.background = element_blank())
+
+ggsave("figures/Mount_Graham_LDA_Faceted.png", width = 8, height = 6)
+
+
+### White Mountains
+
+# Select 5 random individuals and plot in 1st 2 dimensions of linear discriminant analysis. Re-run to resample and plot 5 new individuals.
+
+
+# ---------------------------------------------------------
+# WHITE MOUNTAINS LDA Plot (Faceted 4-Iteration Resampling)
+# ---------------------------------------------------------
+# Run 4 iterations of resampling 5 individuals and bind the results together
+
+# Initialize empty lists to store iteration data
+wm_dfa_list <- list()
+wm_centroids_list <- list()
+
+for (i in 1:4) {
+  # Resample and predict
+  IDs_wm <- sample(levels(wm_scores_99$sq_ID), 5, replace=FALSE)
+  pcscores_sample_wm <- wm_scores_99[wm_scores_99$sq_ID %in% IDs_wm,]
+  pcscores_sample_wm$sq_ID <- factor(pcscores_sample_wm$sq_ID)
+ 
+  dfa_sample_wm <- lda(sq_ID ~., pcscores_sample_wm)
+  p.dfa_wm <- predict(object = dfa_sample_wm, newdata = pcscores_sample_wm)
+
+  # Save results and add an iteration label for faceting
+  dfa_results <- data.frame(sq_ID = pcscores_sample_wm[,"sq_ID"], lda = p.dfa_wm$x)
+  dfa_results$Iteration <- paste("Iteration", i)
+ 
+  # create a local 1-5 index so the 5-color palette scales correctly out of 20 possible IDs
+  dfa_results$Local_ID <- factor(as.numeric(factor(dfa_results$sq_ID)))
+ 
+  centroids <- aggregate(cbind(lda.LD1, lda.LD2) ~ Local_ID, dfa_results, mean)
+  centroids$Iteration <- paste("Iteration", i)
+ 
+  wm_dfa_list[[i]] <- dfa_results
+  wm_centroids_list[[i]] <- centroids
+}
+
+# Bind lists into full data frames
+wm_dfa_all <- do.call(rbind, wm_dfa_list)
+wm_centroids_all <- do.call(rbind, wm_centroids_list)
+
+# Generate Faceted Plot
+ggplot(wm_dfa_all, aes(x = lda.LD1, y = lda.LD2, colour=Local_ID)) +
+  geom_point(size = 0.5) +
+  stat_ellipse(level=0.95, size=0.4) +
+  geom_point(data=wm_centroids_all, aes(fill=Local_ID), size=2, pch=21, colour="black") +
+  scale_colour_manual(values = wes_palette("Darjeeling1", n = 5, type = "discrete")) +
+  scale_fill_manual(values = wes_palette("Darjeeling1", n = 5, type = "discrete")) +
+  facet_wrap(~Iteration, scales = "free") +
+  theme_bw() +
+  ggtitle("White Mountains") +
+  xlab("Linear Discriminant 1") +
+  ylab("Linear Discriminant 2") +
+  theme(legend.position = "none", panel.grid = element_blank(),
+        plot.title = element_text(face="bold", hjust=0.5), axis.text = element_text(size=6),
+        strip.text = element_blank(), strip.background = element_blank())
+
+ggsave("figures/White_Mountains_LDA_Faceted.png", width = 8, height = 6)
+
+
+### Classification success species comparison plot
+
+# Mean and range of classification success from 100 randomly selected groups of 5 individuals for each species
+
+
+mg_correct_df <- as.data.frame(mg_correct_99)
+mg_correct_df$species <- "Mount Graham"
+colnames(mg_correct_df) <- c("correctsample", "species")
+
+wm_correct_df <- as.data.frame(wm_correct_99)
+wm_correct_df$species <- "White Mountains"
+colnames(wm_correct_df) <- c("correctsample", "species")
+
+species.correctsample <- rbind(mg_correct_df, wm_correct_df)
+
+ggplot(species.correctsample, aes(x=species, y=correctsample, fill=species)) +
+  stat_summary(fun.min = min, fun.max = max, geom="errorbar", width=0) +
+  stat_summary(fun = mean, geom="point", pch=21, size=5) +
+  scale_y_continuous(limits=c(0,100), breaks=seq(0,100,20)) +
+  geom_hline(yintercept = 20, lty=2) +
+  ylab("Call classification success (%)") +
+  theme_bw() +
+  theme(panel.grid = element_blank(), axis.title.x = element_blank(), legend.position="none")
+ggsave("figures/Classification_success_comparison.png", width = 6, height = 5)
+
+# Classification success species comparison
+
+# In order to statistically compare the identity info in Mount Graham and White Mountains calls, the classification success of each call (in the full data set) is coded as 0 or 1, based on whether or not the call was assigned to the correct individual.
+
+# Then we bind together the two data sets and run a logistic regression with species as the main effect and individual as a random effect, and ask if there is any species difference in the classification success
+
+# Return summary of model and likelihood ratio test to test significance of species
+
+### Species Comparison from LDA on PC Scores
+
+
+#Bind together classification data sets
+classdata_99 <- rbind(mg.class_99, wm.class_99)
+
+m1 <- glmer(score ~ species + (1|ID), data=classdata_99, family="binomial")
+lrtest(m1, update(m1, ~. -species))
+
+
+### Species Comparison from LDA on PC scores from PCs with SDs > 1
+
+
+#Bind together classification data sets
+classdata_sd1 <- rbind(mg.class_sd1, wm.class_sd1)
+
+m2 <- glmer(score ~ species + (1|ID), data=classdata_sd1, family="binomial")
+lrtest(m2, update(m2, ~. -species))
+
+
+### Species Comparison from LDA on PC scores from PCs that explain 95% of variance
+
+
+#Bind together classification data sets
+classdata_95 <- rbind(mg.class_95, wm.class_95)
+
+m3 <- glmer(score ~ species + (1|ID), data=classdata_95, family="binomial")
+lrtest(m3, update(m3, ~. -species))
 ```
